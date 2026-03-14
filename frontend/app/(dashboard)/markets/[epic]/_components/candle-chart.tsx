@@ -31,33 +31,36 @@ export function CandleChart({ candles, loading }: CandleChartProps) {
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0b1220" },
-        textColor: "rgba(247, 243, 235, 0.72)",
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: "rgba(237, 237, 237, 0.6)",
         attributionLogo: false,
+        fontFamily: "'JetBrains Mono', monospace",
       },
       grid: {
-        vertLines: { color: "rgba(255, 255, 255, 0.06)" },
-        horzLines: { color: "rgba(255, 255, 255, 0.06)" },
+        vertLines: { color: "rgba(255, 255, 255, 0.05)" },
+        horzLines: { color: "rgba(255, 255, 255, 0.05)" },
       },
       crosshair: {
-        vertLine: { color: "rgba(15, 118, 110, 0.4)" },
-        horzLine: { color: "rgba(15, 118, 110, 0.4)" },
+        mode: 1,
+        vertLine: { color: "rgba(255, 255, 255, 0.4)", width: 1, style: 3, labelBackgroundColor: "#ffffff" },
+        horzLine: { color: "rgba(255, 255, 255, 0.4)", width: 1, style: 3, labelBackgroundColor: "#ffffff" },
       },
       rightPriceScale: {
-        borderColor: "rgba(255, 255, 255, 0.12)",
+        borderColor: "rgba(255, 255, 255, 0.1)",
+        scaleMargins: { top: 0.1, bottom: 0.1 },
       },
       timeScale: {
-        borderColor: "rgba(255, 255, 255, 0.12)",
+        borderColor: "rgba(255, 255, 255, 0.1)",
         timeVisible: true,
         secondsVisible: false,
       },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#10b981",
-      downColor: "#f97316",
-      wickUpColor: "#10b981",
-      wickDownColor: "#f97316",
+      upColor: "#00e59b",
+      downColor: "#ff3358",
+      wickUpColor: "#00e59b",
+      wickDownColor: "#ff3358",
       borderVisible: false,
     });
 
@@ -98,13 +101,12 @@ export function CandleChart({ candles, loading }: CandleChartProps) {
   }, [candles]);
 
   return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-[18px]">
+    <div className="relative h-full w-full bg-background overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
       {loading ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0b1220]/70 backdrop-blur-sm">
-          <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 font-mono text-xs uppercase tracking-[0.24em] text-white/60">
-            loading candles
-          </div>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
+           <span className="mt-4 font-mono text-[10px] uppercase tracking-widest text-white">Loading Data</span>
         </div>
       ) : null}
     </div>

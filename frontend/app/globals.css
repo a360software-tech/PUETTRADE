@@ -1,20 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4efe7;
-  --foreground: #1f2937;
-  --surface: #fffdf9;
-  --surface-strong: #f0e5d7;
-  --surface-muted: #d8d0c5;
-  --panel: #111827;
-  --panel-foreground: #f7f3eb;
-  --accent: #0f766e;
-  --accent-strong: #0b5b55;
-  --accent-soft: #d7efe9;
-  --danger: #c2410c;
-  --border: rgba(31, 41, 55, 0.12);
-  --shadow-soft: 0 18px 60px rgba(31, 41, 55, 0.08);
-  --shadow-panel: 0 22px 70px rgba(15, 23, 42, 0.2);
+  --background: #000000;
+  --foreground: #ededed;
+  --surface: #0a0a0a;
+  --surface-strong: #121212;
+  --surface-muted: #1a1a1a;
+  --panel: #050505;
+  --panel-foreground: #fafafa;
+  
+  --accent: #ffffff;
+  --accent-strong: #e5e5e5;
+  --accent-soft: rgba(255, 255, 255, 0.1);
+  --accent-foreground: #000000;
+  
+  --danger: #ff3358;
+  --trade-up: #00e59b;
+  --trade-up-soft: rgba(0, 229, 155, 0.15);
+  --trade-down: #ff3358;
+  --trade-down-soft: rgba(255, 51, 88, 0.15);
+
+  --border: rgba(255, 255, 255, 0.1);
+  --border-light: rgba(255, 255, 255, 0.05);
+  
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.8);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 1);
 }
 
 @theme {
@@ -25,13 +35,24 @@
   --color-surface-muted: var(--surface-muted);
   --color-panel: var(--panel);
   --color-panel-foreground: var(--panel-foreground);
+  
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+  
+  --color-trade-up: var(--trade-up);
+  --color-trade-up-soft: var(--trade-up-soft);
+  --color-trade-down: var(--trade-down);
+  --color-trade-down-soft: var(--trade-down-soft);
   --color-danger: var(--danger);
+  
   --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  
   --font-sans: var(--font-display);
   --font-mono: var(--font-mono);
+  
   --shadow-soft: var(--shadow-soft);
   --shadow-panel: var(--shadow-panel);
 }
@@ -42,6 +63,7 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
 }
 
 body {
@@ -49,9 +71,8 @@ body {
   color: var(--foreground);
   font-family: var(--font-display), sans-serif;
   background-image:
-    radial-gradient(circle at top left, rgba(15, 118, 110, 0.1), transparent 35%),
-    radial-gradient(circle at top right, rgba(194, 65, 12, 0.08), transparent 28%),
-    linear-gradient(180deg, #fbf7f1 0%, #f4efe7 52%, #efe6d9 100%);
+    radial-gradient(circle at top center, rgba(255, 255, 255, 0.03), transparent 60%);
+  background-color: var(--background);
   min-height: 100vh;
 }
 
@@ -67,5 +88,6 @@ select {
 }
 
 ::selection {
-  background: rgba(15, 118, 110, 0.18);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
