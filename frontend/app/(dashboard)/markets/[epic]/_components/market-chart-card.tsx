@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useCandles } from "../_hooks/use-candles";
+import { useCandleStream } from "../_hooks/use-candle-stream";
 import { CandleChart } from "./candle-chart";
 
 const resolutions = [
@@ -15,8 +16,15 @@ const resolutions = [
 export function MarketChartCard({ epic }: { epic: string }) {
   const [resolution, setResolution] = useState<(typeof resolutions)[number]["value"]>("MINUTE");
   const { data, isLoading, error, isPreview } = useCandles({ epic, resolution, max: 200 });
+  
+  const { candles: streamingCandles, isStreaming, error: streamError } = useCandleStream({
+    epic,
+    resolution,
+    initialCandles: data?.candles ?? [],
+  });
 
-  const latest = useMemo(() => data?.candles.at(-1), [data]);
+  const candles = streamingCandles.length > 0 ? streamingCandles : (data?.candles ?? []);
+  const latest = useMemo(() => candles.at(-1), [candles]);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -43,7 +51,13 @@ export function MarketChartCard({ epic }: { epic: string }) {
         </div>
         
         <div className="flex items-center gap-2">
-          {isPreview && (
+          {isStreaming && (
+            <span className="flex items-center gap-1.5 rounded-full border border-trade-up/30 bg-trade-up/10 px-2 py-0.5 font-mono text-[10px] uppercase text-trade-up">
+              <span className="h-1.5 w-1.5 rounded-full bg-trade-up animate-pulse" />
+              Live
+            </span>
+          )}
+          {isPreview && !isStreaming && (
             <span className="flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-muted px-2 py-0.5 font-mono text-[10px] uppercase text-gray-300">
               <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
               Preview Data
@@ -55,7 +69,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
       <div className="flex flex-1 min-h-0">
         {/* Main Chart */}
         <div className="flex-1 border-r border-border/40 relative">
-          <CandleChart candles={data?.candles ?? []} loading={isLoading} />
+          <CandleChart candles={candles} loading={isLoading} />
         </div>
 
         {/* Right Panel - Order / Details */}
@@ -83,15 +97,16 @@ export function MarketChartCard({ epic }: { epic: string }) {
                  <h4 className="font-sans text-xs font-semibold text-gray-400 mb-2">Market Stats</h4>
                  <div className="space-y-2">
                    <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Res</span><span className="text-white">{resolution}</span></div>
-                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Candles</span><span className="text-white">{data?.candles.length ?? 0}</span></div>
+                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Candles</span><span className="text-white">{candles.length}</span></div>
                    <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">API Calls</span><span className="text-white">{formatAllowance(data?.allowance_remaining, data?.allowance_total)}</span></div>
+                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Stream</span><span className={isStreaming ? "text-trade-up" : "text-gray-500"}>{isStreaming ? "Active" : "Inactive"}</span></div>
                  </div>
                </div>
 
-               {error && (
+               {(error || streamError) && (
                 <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
                   <p className="font-semibold">Connection Error</p>
-                  <p className="mt-1">{error}</p>
+                  <p className="mt-1">{error || streamError}</p>
                 </div>
                )}
             </div>

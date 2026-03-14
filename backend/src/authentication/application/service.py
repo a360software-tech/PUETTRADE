@@ -53,13 +53,14 @@ class AuthService:
         )
 
         oauth = _require_mapping(ig_response, "oauthToken")
-        account_info = _require_mapping(ig_response, "accountInfo")
+
+        account_id = _extract_account_id(ig_response)
 
         expires_in = _coerce_int(oauth.get("expires_in"), default=3600)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
         session = UserSession(
-            account_id=str(account_info.get("accountId", "")),
+            account_id=account_id,
             client_id=str(ig_response.get("clientId", "")),
             lightstreamer_endpoint=str(ig_response.get("lightstreamerEndpoint", "")),
             access_token=str(oauth.get("access_token", "")),
@@ -148,3 +149,22 @@ def _coerce_int(value: object, default: int) -> int:
         return int(str(value))
     except (TypeError, ValueError) as exc:
         raise AuthenticationError("IG returned an invalid token expiry") from exc
+
+
+def _extract_account_id(ig_response: dict[str, object]) -> str:
+    if "accountInfo" in ig_response and isinstance(ig_response.get("accountInfo"), dict):
+        account_info = ig_response["accountInfo"]
+        if isinstance(account_info, dict) and "accountId" in account_info:
+            return str(account_info["accountId"])
+    
+    if "accountId" in ig_response:
+        return str(ig_response["accountId"])
+    
+    if "accounts" in ig_response and isinstance(ig_response.get("accounts"), list):
+        accounts = ig_response["accounts"]
+        if len(accounts) > 0 and isinstance(accounts[0], dict):
+            first_account = accounts[0]
+            if "accountId" in first_account:
+                return str(first_account["accountId"])
+    
+    raise AuthenticationError("IG response missing account information")

@@ -1,6 +1,6 @@
 from shared.config.settings import Settings, get_settings
 
-from authentication.application.service import session_manager
+from authentication.application.service import AuthService
 from integrations.ig.rest.prices_client import IgPricesClient
 from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery
 
@@ -10,15 +10,27 @@ class MarketDataService:
         self._settings = settings
         self._client = IgPricesClient(settings)
 
-    def _get_auth_headers(self) -> dict[str, str]:
-        session = session_manager.require_session()
-        return {
-            "Authorization": f"Bearer {session.access_token}",
-            "X-IG-API-KEY": self._settings.ig_api_key,
-        }
+    async def get_candles(
+        self,
+        epic: str,
+        query: CandleQuery,
+        access_token: str | None,
+        auth_service: AuthService,
+    ) -> CandlesResponse:
+        if not access_token:
+            from shared.errors.base import NotAuthenticatedError
+            raise NotAuthenticatedError("No access token provided")
 
-    async def get_candles(self, epic: str, query: CandleQuery) -> CandlesResponse:
-        auth_headers = self._get_auth_headers()
+        tokens = await auth_service.get_session_tokens()
+        
+        auth_headers = {
+            "Authorization": f"Bearer {access_token}",
+            "X-IG-API-KEY": self._settings.ig_api_key,
+            "CST": tokens.cst,
+            "X-SECURITY-TOKEN": tokens.x_security_token,
+            "IG-ACCOUNT-ID": tokens.account_id,
+        }
+        
         if query.from_ and query.to:
             payload = await self._client.get_prices_by_range(
                 epic=epic,
