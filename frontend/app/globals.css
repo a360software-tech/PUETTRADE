@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4efe7;
+  --foreground: #1f2937;
+  --surface: #fffdf9;
+  --surface-strong: #f0e5d7;
+  --surface-muted: #d8d0c5;
+  --panel: #111827;
+  --panel-foreground: #f7f3eb;
+  --accent: #0f766e;
+  --accent-strong: #0b5b55;
+  --accent-soft: #d7efe9;
+  --danger: #c2410c;
+  --border: rgba(31, 41, 55, 0.12);
+  --shadow-soft: 0 18px 60px rgba(31, 41, 55, 0.08);
+  --shadow-panel: 0 22px 70px rgba(15, 23, 42, 0.2);
 }
 
-@theme inline {
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-surface-muted: var(--surface-muted);
+  --color-panel: var(--panel);
+  --color-panel-foreground: var(--panel-foreground);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-border: var(--border);
+  --font-sans: var(--font-display);
+  --font-mono: var(--font-mono);
+  --shadow-soft: var(--shadow-soft);
+  --shadow-panel: var(--shadow-panel);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-display), sans-serif;
+  background-image:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.1), transparent 35%),
+    radial-gradient(circle at top right, rgba(194, 65, 12, 0.08), transparent 28%),
+    linear-gradient(180deg, #fbf7f1 0%, #f4efe7 52%, #efe6d9 100%);
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.18);
 }
