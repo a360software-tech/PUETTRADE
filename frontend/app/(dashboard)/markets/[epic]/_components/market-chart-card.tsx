@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { useCandles } from "../_hooks/use-candles";
 import { useCandleStream } from "../_hooks/use-candle-stream";
@@ -10,21 +10,31 @@ const resolutions = [
   { value: "MINUTE", label: "1m" },
   { value: "MINUTE_5", label: "5m" },
   { value: "HOUR", label: "1H" },
-  { value: "DAY", label: "1D" }
+  { value: "DAY", label: "1D" },
 ] as const;
 
 export function MarketChartCard({ epic }: { epic: string }) {
-  const [resolution, setResolution] = useState<(typeof resolutions)[number]["value"]>("MINUTE");
-  const { data, isLoading, error, isPreview } = useCandles({ epic, resolution, max: 200 });
-  
-  const { candles: streamingCandles, isStreaming, error: streamError } = useCandleStream({
+  const [resolution, setResolution] =
+    useState<(typeof resolutions)[number]["value"]>("MINUTE");
+  const { data, isLoading, error, isPreview } = useCandles({
+    epic,
+    resolution,
+    max: 200,
+  });
+
+  const {
+    candles: streamingCandles,
+    isStreaming,
+    error: streamError,
+  } = useCandleStream({
     epic,
     resolution,
     initialCandles: data?.candles ?? [],
   });
 
-  const candles = streamingCandles.length > 0 ? streamingCandles : (data?.candles ?? []);
-  const latest = useMemo(() => candles.at(-1), [candles]);
+  const candles =
+    streamingCandles.length > 0 ? streamingCandles : (data?.candles ?? []);
+  const latest = candles.at(-1);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -46,10 +56,14 @@ export function MarketChartCard({ epic }: { epic: string }) {
             </button>
           ))}
           <div className="ml-2 h-4 w-px bg-border/60" />
-          <button className="px-2 text-xs text-gray-400 hover:text-white">Indicators</button>
-          <button className="px-2 text-xs text-gray-400 hover:text-white">Compare</button>
+          <button className="px-2 text-xs text-gray-400 hover:text-white">
+            Indicators
+          </button>
+          <button className="px-2 text-xs text-gray-400 hover:text-white">
+            Compare
+          </button>
         </div>
-        
+
         <div className="flex items-center gap-2">
           {isStreaming && (
             <span className="flex items-center gap-1.5 rounded-full border border-trade-up/30 bg-trade-up/10 px-2 py-0.5 font-mono text-[10px] uppercase text-trade-up">
@@ -77,38 +91,69 @@ export function MarketChartCard({ epic }: { epic: string }) {
           <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
             <span className="font-sans text-sm font-semibold">Order Book</span>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-2xl font-bold text-white">{latest ? latest.close.toFixed(5) : "—"}</span>
+              <span className="font-mono text-2xl font-bold text-white">
+                {latest ? latest.close.toFixed(5) : "—"}
+              </span>
             </div>
-            
+
             <div className="grid grid-cols-2 gap-2">
               <button className="flex flex-col items-center justify-center rounded-sm bg-trade-up/10 border border-trade-up/30 py-3 transition hover:bg-trade-up/20">
-                <span className="font-sans text-sm font-bold text-trade-up">BUY</span>
+                <span className="font-sans text-sm font-bold text-trade-up">
+                  BUY
+                </span>
               </button>
               <button className="flex flex-col items-center justify-center rounded-sm bg-trade-down/10 border border-trade-down/30 py-3 transition hover:bg-trade-down/20">
-                <span className="font-sans text-sm font-bold text-trade-down">SELL</span>
+                <span className="font-sans text-sm font-bold text-trade-down">
+                  SELL
+                </span>
               </button>
             </div>
 
             <div className="mt-auto space-y-3">
-               <div className="rounded-lg border border-border/40 bg-surface-strong p-3">
-                 <h4 className="font-sans text-xs font-semibold text-gray-400 mb-2">Market Stats</h4>
-                 <div className="space-y-2">
-                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Res</span><span className="text-white">{resolution}</span></div>
-                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Candles</span><span className="text-white">{candles.length}</span></div>
-                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">API Calls</span><span className="text-white">{formatAllowance(data?.allowance_remaining, data?.allowance_total)}</span></div>
-                   <div className="flex justify-between font-mono text-xs"><span className="text-gray-500">Stream</span><span className={isStreaming ? "text-trade-up" : "text-gray-500"}>{isStreaming ? "Active" : "Inactive"}</span></div>
-                 </div>
-               </div>
+              <div className="rounded-lg border border-border/40 bg-surface-strong p-3">
+                <h4 className="font-sans text-xs font-semibold text-gray-400 mb-2">
+                  Market Stats
+                </h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between font-mono text-xs">
+                    <span className="text-gray-500">Res</span>
+                    <span className="text-white">{resolution}</span>
+                  </div>
+                  <div className="flex justify-between font-mono text-xs">
+                    <span className="text-gray-500">Candles</span>
+                    <span className="text-white">{candles.length}</span>
+                  </div>
+                  <div className="flex justify-between font-mono text-xs">
+                    <span className="text-gray-500">API Calls</span>
+                    <span className="text-white">
+                      {formatAllowance(
+                        data?.allowance_remaining,
+                        data?.allowance_total,
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-mono text-xs">
+                    <span className="text-gray-500">Stream</span>
+                    <span
+                      className={
+                        isStreaming ? "text-trade-up" : "text-gray-500"
+                      }
+                    >
+                      {isStreaming ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-               {(error || streamError) && (
+              {(error || streamError) && (
                 <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
                   <p className="font-semibold">Connection Error</p>
                   <p className="mt-1">{error || streamError}</p>
                 </div>
-               )}
+              )}
             </div>
           </div>
         </aside>

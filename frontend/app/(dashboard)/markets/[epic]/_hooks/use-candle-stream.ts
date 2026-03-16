@@ -33,29 +33,31 @@ export function useCandleStream({
   resolution,
   initialCandles,
 }: UseCandleStreamParams): UseCandleStreamState {
-  const [candles, setCandles] = useState<Candle[]>(initialCandles);
+  const [candles, setCandles] = useState<Candle[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const lastCandleRef = useRef<Candle | null>(null);
 
   const connect = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-    const url = new URL(`/api/v1/market-data/${encodeURIComponent(epic)}/stream`, baseUrl);
+    const baseUrl =
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+    const url = new URL(
+      `/api/v1/market-data/${encodeURIComponent(epic)}/stream`,
+      baseUrl,
+    );
     url.searchParams.set("resolution", resolution);
 
     const eventSource = new EventSource(url.toString());
     eventSourceRef.current = eventSource;
 
-    setIsStreaming(true);
-    setError(null);
-
     eventSource.addEventListener("connected", () => {
       console.log("Streaming connected for", epic);
+      setIsStreaming(true);
+      setError(null);
     });
 
     eventSource.addEventListener("error", (event) => {
@@ -98,8 +100,6 @@ export function useCandleStream({
 
             return [...current, updateCandle];
           });
-
-          lastCandleRef.current = updateCandle;
         }
       } catch (err) {
         console.error("Error parsing SSE message:", err);
@@ -114,15 +114,6 @@ export function useCandleStream({
     };
   }, [epic, resolution]);
 
-  const initializedRef = useRef(false);
-
-  useEffect(() => {
-    if (!initializedRef.current && initialCandles.length > 0) {
-      setCandles(initialCandles);
-      initializedRef.current = true;
-    }
-  }, [initialCandles]);
-
   useEffect(() => {
     connect();
 
@@ -131,12 +122,11 @@ export function useCandleStream({
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
-      setIsStreaming(false);
     };
   }, [connect]);
 
   return {
-    candles,
+    candles: candles.length > 0 ? candles : initialCandles,
     isStreaming,
     error,
   };

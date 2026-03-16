@@ -123,6 +123,12 @@ class AuthService:
             lightstreamer_endpoint=session.lightstreamer_endpoint,
         )
 
+    def get_access_token(self) -> str:
+        session = session_manager.require_session()
+        if not session.access_token:
+            raise NotAuthenticatedError("No access token provided")
+        return session.access_token
+
 
 def get_auth_service() -> AuthService:
     return AuthService(get_settings())

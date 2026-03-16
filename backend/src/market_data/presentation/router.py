@@ -27,4 +27,5 @@ async def get_candles(
     to: str | None = Query(default=None),
 ) -> CandlesResponse:
     query = CandleQuery(resolution=resolution, max=max, from_=from_, to=to)
-    return await service.get_candles(epic, query, token, auth_service)
+    access_token = token or auth_service.get_access_token()
+    return await service.get_candles(epic, query, access_token, auth_service)
