@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 
 import { getCandles } from "@/lib/api/market-data";
-import { buildMockCandles } from "@/utils/mock-candles";
 import type { CandlesResponse, Resolution } from "@/types/market-data";
 
 type UseCandlesParams = {
@@ -16,7 +15,7 @@ type UseCandlesState = {
   data: CandlesResponse | null;
   isLoading: boolean;
   error: string | null;
-  isPreview: boolean;
+  isLiveOnly: boolean;
 };
 
 export function useCandles({ epic, resolution, max }: UseCandlesParams): UseCandlesState {
@@ -24,7 +23,7 @@ export function useCandles({ epic, resolution, max }: UseCandlesParams): UseCand
     data: null,
     isLoading: true,
     error: null,
-    isPreview: false,
+    isLiveOnly: false,
   });
 
   useEffect(() => {
@@ -39,7 +38,7 @@ export function useCandles({ epic, resolution, max }: UseCandlesParams): UseCand
           return;
         }
 
-        setState({ data, isLoading: false, error: null, isPreview: false });
+        setState({ data, isLoading: false, error: null, isLiveOnly: false });
       } catch (error) {
         if (cancelled) {
           return;
@@ -48,10 +47,10 @@ export function useCandles({ epic, resolution, max }: UseCandlesParams): UseCand
         const detail = error instanceof Error ? error.message : "Unable to load candles";
 
         setState({
-          data: buildMockCandles({ epic, resolution, max }),
+          data: null,
           isLoading: false,
           error: detail,
-          isPreview: true,
+          isLiveOnly: true,
         });
       }
     }

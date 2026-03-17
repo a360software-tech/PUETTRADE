@@ -1,11 +1,10 @@
 import asyncio
-import json
 import logging
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import uuid4
 from typing import Callable, Optional
-
-import httpx
 
 from lightstreamer_client import LightstreamerClient, LightstreamerSubscription
 
@@ -37,7 +36,9 @@ class LightstreamerGateway:
         self._client: Optional[LightstreamerClient] = None
         self._credentials: Optional[LightstreamerCredentials] = None
         self._subscriptions: dict[str, str] = {}
-        self._candle_state: dict[str, dict] = {}
+        self._listeners: dict[str, dict[str, Callable[[CandleUpdate], None]]] = {}
+        self._candle_state: dict[str, dict[str, float | str]] = {}
+        self._recent_candles: dict[str, deque[CandleUpdate]] = {}
         self._connected = False
         self._lock = asyncio.Lock()
 
@@ -81,7 +82,9 @@ class LightstreamerGateway:
                         logger.error(f"Error unsubscribing: {e}")
 
             self._subscriptions.clear()
+            self._listeners.clear()
             self._candle_state.clear()
+            self._recent_candles.clear()
 
             if self._client:
                 try:
@@ -97,31 +100,81 @@ class LightstreamerGateway:
         self,
         epic: str,
         resolution: str = "1MINUTE",
-        callback: Callable[[CandleUpdate], None] = None
-    ) -> Optional[str]:
+        callback: Callable[[CandleUpdate], None] | None = None,
+    ) -> str:
         if not callback:
             raise ValueError("callback is required")
-        
+
         if not self._client or not self._connected:
             raise RuntimeError("Not connected to Lightstreamer")
 
-        sub_key = self._subscriptions.get(epic)
+        client = self._client
+        if client is None:
+            raise RuntimeError("Lightstreamer client unavailable")
+
+        subscription_key = f"{epic}:{resolution}"
+        listener_id = str(uuid4())
+        listeners = self._listeners.setdefault(subscription_key, {})
+        listeners[listener_id] = callback
+
+        sub_key = self._subscriptions.get(subscription_key)
         if sub_key:
-            return sub_key
+            return listener_id
 
         item_name = f"CHART:{epic}:{resolution}"
         fields = ["BID_OPEN", "BID_HIGH", "BID_LOW", "BID_CLOSE", "CONS_END", "UTM", "LTV"]
 
-        current_candle: dict = {}
-        
+        current_candle: dict[str, float | str] = self._candle_state.setdefault(subscription_key, {})
+        recent_candles = self._recent_candles.setdefault(subscription_key, deque(maxlen=500))
+
+        def emit(update: CandleUpdate) -> None:
+            if recent_candles and recent_candles[-1].time == update.time:
+                recent_candles[-1] = update
+            else:
+                recent_candles.append(update)
+
+            for listener in list(self._listeners.get(subscription_key, {}).values()):
+                try:
+                    listener(update)
+                except Exception as e:
+                    logger.error(f"Error dispatching candle update: {e}")
+
+        def build_candle_update(completed: bool) -> CandleUpdate:
+            return CandleUpdate(
+                epic=epic,
+                time=str(current_candle["time"]),
+                open_price=float(current_candle["open"]),
+                high=float(current_candle["high"]),
+                low=float(current_candle["low"]),
+                close=float(current_candle["close"]),
+                volume=float(current_candle.get("volume", 0.0)),
+                completed=completed,
+            )
+
         def on_item_update(update) -> None:
             try:
-                bid_open = update.get("BID_OPEN")
-                bid_high = update.get("BID_HIGH")
-                bid_low = update.get("BID_LOW")
-                bid_close = update.get("BID_CLOSE")
-                cons_end = update.get("CONS_END")
-                utm = update.get("UTM")
+                item_name = str(update.get("name") or "")
+                if item_name and item_name != item_name_expected:
+                    logger.warning(
+                        "Lightstreamer item mismatch for %s: expected=%s received=%s",
+                        subscription_key,
+                        item_name_expected,
+                        item_name,
+                    )
+                    return
+
+                values = update.get("values")
+                if not isinstance(values, dict):
+                    logger.debug("Lightstreamer update missing values for %s: %s", subscription_key, update)
+                    return
+
+                bid_open = values.get("BID_OPEN")
+                bid_high = values.get("BID_HIGH")
+                bid_low = values.get("BID_LOW")
+                bid_close = values.get("BID_CLOSE")
+                cons_end = values.get("CONS_END")
+                utm = values.get("UTM")
+                ltv = values.get("LTV")
 
                 if not bid_close:
                     return
@@ -132,47 +185,45 @@ class LightstreamerGateway:
                 candle_time = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%dT%H:%M:%S")
 
                 if completed and current_candle:
-                    callback(CandleUpdate(
-                        epic=epic,
-                        time=current_candle["time"],
-                        open_price=current_candle["open"],
-                        high=current_candle["high"],
-                        low=current_candle["low"],
-                        close=current_candle["close"],
-                        volume=current_candle.get("volume", 0.0),
-                        completed=True
-                    ))
+                    emit(build_candle_update(completed=True))
                     current_candle.clear()
 
                 if not current_candle:
-                    current_candle = {
+                    close = float(bid_close)
+                    high = float(bid_high) if bid_high else close
+                    low = float(bid_low) if bid_low else close
+                    current_candle.update({
                         "time": candle_time,
-                        "open": float(bid_open) if bid_open else 0.0,
-                        "high": float(bid_high) if bid_high else 0.0,
-                        "low": float(bid_low) if bid_low else 0.0,
-                        "close": float(bid_close) if bid_close else 0.0,
-                        "volume": 0.0
-                    }
+                        "open": float(bid_open) if bid_open else close,
+                        "high": high,
+                        "low": low,
+                        "close": close,
+                        "volume": float(ltv) if ltv else 0.0,
+                    })
                 else:
-                    close = float(bid_close) if bid_close else 0.0
+                    close = float(bid_close)
+                    high = float(bid_high) if bid_high else close
+                    low = float(bid_low) if bid_low else close
                     current_candle["close"] = close
-                    current_candle["high"] = max(current_candle["high"], close)
-                    current_candle["low"] = min(current_candle["low"], close)
+                    current_candle["high"] = max(current_candle["high"], high)
+                    current_candle["low"] = min(current_candle["low"], low)
+                    current_candle["volume"] = float(ltv) if ltv else current_candle.get("volume", 0.0)
 
-                callback(CandleUpdate(
-                    epic=epic,
-                    time=current_candle["time"],
-                    open_price=current_candle["open"],
-                    high=current_candle["high"],
-                    low=current_candle["low"],
-                    close=current_candle["close"],
-                    volume=current_candle.get("volume", 0.0),
-                    completed=False
-                ))
+                emit(build_candle_update(completed=False))
+                logger.debug(
+                    "Processed candle update epic=%s resolution=%s item=%s time=%s close=%s completed=%s",
+                    epic,
+                    resolution,
+                    item_name or item_name_expected,
+                    current_candle["time"],
+                    current_candle["close"],
+                    completed,
+                )
 
             except Exception as e:
                 logger.error(f"Error processing candle update: {e}")
 
+        item_name_expected = item_name
         subscription = LightstreamerSubscription(
             mode="MERGE",
             items=[item_name],
@@ -182,29 +233,46 @@ class LightstreamerGateway:
         subscription.addlistener(on_item_update)
 
         loop = asyncio.get_event_loop()
-        sub_key: Optional[str] = await loop.run_in_executor(
-            None,
-            lambda: self._client.subscribe(subscription)
-        )
+        raw_sub_key: object | None = await loop.run_in_executor(None, client.subscribe, subscription)
+        sub_key = None if raw_sub_key is None else str(raw_sub_key)
 
         if sub_key:
-            self._subscriptions[epic] = sub_key
-            self._candle_state[epic] = current_candle
+            self._subscriptions[subscription_key] = sub_key
 
         logger.info(f"Subscribed to {item_name}")
-        return sub_key
+        return listener_id
 
-    async def unsubscribe(self, epic: str) -> None:
-        sub_key = self._subscriptions.get(epic)
+    async def unsubscribe(self, epic: str, resolution: str, listener_id: str) -> None:
+        subscription_key = f"{epic}:{resolution}"
+        listeners = self._listeners.get(subscription_key)
+        if listeners is not None:
+            listeners.pop(listener_id, None)
+
+        if listeners:
+            return
+
+        sub_key = self._subscriptions.get(subscription_key)
         if sub_key and self._client:
             try:
+                client = self._client
+                if client is None:
+                    return
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, lambda: self._client.unsubscribe(sub_key))
+                await loop.run_in_executor(None, client.unsubscribe, sub_key)
             except Exception as e:
                 logger.error(f"Error unsubscribing from {epic}: {e}")
 
-        self._subscriptions.pop(epic, None)
-        self._candle_state.pop(epic, None)
+        self._subscriptions.pop(subscription_key, None)
+        self._listeners.pop(subscription_key, None)
+        self._candle_state.pop(subscription_key, None)
+        self._recent_candles.pop(subscription_key, None)
+
+    def get_buffered_candles(self, epic: str, resolution: str, limit: int = 200) -> list[CandleUpdate]:
+        subscription_key = f"{epic}:{resolution}"
+        recent_candles = self._recent_candles.get(subscription_key)
+        if not recent_candles:
+            return []
+        return list(recent_candles)[-limit:]
 
 
 lightstreamer_gateway = LightstreamerGateway()

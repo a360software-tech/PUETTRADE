@@ -1,8 +1,15 @@
+from time import monotonic
+
 from shared.config.settings import Settings, get_settings
 
 from authentication.application.service import AuthService
 from integrations.ig.rest.prices_client import IgPricesClient
+from integrations.ig.streaming.lightstreamer import lightstreamer_gateway
 from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery
+from shared.errors.base import IntegrationError
+
+_CACHE_TTL_SECONDS = 10.0
+_candle_cache: dict[tuple[str, str, int, str | None, str | None, str], tuple[float, CandlesResponse]] = {}
 
 
 class MarketDataService:
@@ -21,6 +28,11 @@ class MarketDataService:
             from shared.errors.base import NotAuthenticatedError
             raise NotAuthenticatedError("No access token provided")
 
+        cache_key = (epic, query.resolution, query.max, query.from_, query.to, access_token)
+        cached = _candle_cache.get(cache_key)
+        if cached and monotonic() - cached[0] < _CACHE_TTL_SECONDS:
+            return cached[1].model_copy(deep=True)
+
         tokens = await auth_service.get_session_tokens()
         
         auth_headers = {
@@ -31,32 +43,40 @@ class MarketDataService:
             "IG-ACCOUNT-ID": tokens.account_id,
         }
         
-        if query.from_ and query.to:
-            payload = await self._client.get_prices_by_range(
-                epic=epic,
-                resolution=query.resolution,
-                start_date=query.from_,
-                end_date=query.to,
-                auth_headers=auth_headers,
-            )
-        else:
-            payload = await self._client.get_prices(
-                epic=epic,
-                resolution=query.resolution,
-                auth_headers=auth_headers,
-                max_points=query.max,
-            )
+        try:
+            if query.from_ and query.to:
+                payload = await self._client.get_prices_by_range(
+                    epic=epic,
+                    resolution=query.resolution,
+                    start_date=query.from_,
+                    end_date=query.to,
+                    auth_headers=auth_headers,
+                )
+            else:
+                payload = await self._client.get_prices(
+                    epic=epic,
+                    resolution=query.resolution,
+                    auth_headers=auth_headers,
+                    max_points=query.max,
+                )
+        except IntegrationError as exc:
+            fallback = _build_stream_fallback(epic=epic, resolution=query.resolution, max_points=query.max)
+            if fallback is not None and _is_historical_allowance_error(exc):
+                return fallback
+            raise
 
         prices = _as_list_of_dicts(payload.get("prices"))
         allowance = _as_dict(payload.get("allowance"))
 
-        return CandlesResponse(
+        response = CandlesResponse(
             epic=epic,
             resolution=query.resolution,
             candles=[_map_price_to_candle_item(price) for price in prices],
             allowance_remaining=_as_int(allowance.get("remainingAllowance")),
             allowance_total=_as_int(allowance.get("totalAllowance")),
         )
+        _candle_cache[cache_key] = (monotonic(), response.model_copy(deep=True))
+        return response
 
 
 def get_market_data_service() -> MarketDataService:
@@ -85,6 +105,53 @@ def _pick_price(price: dict[str, object]) -> float:
         if value is not None:
             return value
     return 0.0
+
+
+def _build_stream_fallback(epic: str, resolution: str, max_points: int) -> CandlesResponse | None:
+    resolution_map = {
+        "MINUTE": "1MINUTE",
+        "MINUTE_2": "2MINUTE",
+        "MINUTE_3": "3MINUTE",
+        "MINUTE_5": "5MINUTE",
+        "MINUTE_10": "10MINUTE",
+        "MINUTE_15": "15MINUTE",
+        "MINUTE_30": "30MINUTE",
+        "HOUR": "1HOUR",
+        "HOUR_2": "2HOUR",
+        "HOUR_3": "3HOUR",
+        "HOUR_4": "4HOUR",
+        "DAY": "1DAY",
+    }
+
+    buffered = lightstreamer_gateway.get_buffered_candles(
+        epic=epic,
+        resolution=resolution_map.get(resolution, "1MINUTE"),
+        limit=max_points,
+    )
+    if not buffered:
+        return None
+
+    return CandlesResponse(
+        epic=epic,
+        resolution=resolution,
+        candles=[
+            CandleItemResponse(
+                time=candle.time,
+                open=candle.open_price,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume=candle.volume,
+            )
+            for candle in buffered
+        ],
+        allowance_remaining=None,
+        allowance_total=None,
+    )
+
+
+def _is_historical_allowance_error(error: IntegrationError) -> bool:
+    return "error.public-api.exceeded-account-historical-data-allowance" in error.detail
 
 
 def _as_dict(value: object) -> dict[str, object]:

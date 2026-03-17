@@ -16,7 +16,7 @@ const resolutions = [
 export function MarketChartCard({ epic }: { epic: string }) {
   const [resolution, setResolution] =
     useState<(typeof resolutions)[number]["value"]>("MINUTE");
-  const { data, isLoading, error, isPreview } = useCandles({
+  const { data, isLoading, error, isLiveOnly } = useCandles({
     epic,
     resolution,
     max: 200,
@@ -71,10 +71,10 @@ export function MarketChartCard({ epic }: { epic: string }) {
               Live
             </span>
           )}
-          {isPreview && !isStreaming && (
-            <span className="flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-muted px-2 py-0.5 font-mono text-[10px] uppercase text-gray-300">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-              Preview Data
+          {isLiveOnly && (
+            <span className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] uppercase text-amber-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Live Only
             </span>
           )}
         </div>
@@ -83,7 +83,15 @@ export function MarketChartCard({ epic }: { epic: string }) {
       <div className="flex flex-1 min-h-0">
         {/* Main Chart */}
         <div className="flex-1 border-r border-border/40 relative">
-          <CandleChart candles={candles} loading={isLoading} />
+          <CandleChart
+            candles={candles}
+            loading={isLoading}
+            emptyMessage={
+              isLiveOnly
+                ? "Historical data unavailable. Waiting for live candles from IG stream."
+                : "No candle data available yet."
+            }
+          />
         </div>
 
         {/* Right Panel - Order / Details */}
@@ -150,7 +158,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
 
               {(error || streamError) && (
                 <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
-                  <p className="font-semibold">Connection Error</p>
+                  <p className="font-semibold">Data Notice</p>
                   <p className="mt-1">{error || streamError}</p>
                 </div>
               )}
