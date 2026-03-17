@@ -248,7 +248,7 @@ export function CandleChart({ candles, loading, emptyMessage }: CandleChartProps
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white" />
           <span className="mt-4 font-mono text-[10px] uppercase tracking-widest text-white">
-            Loading Data
+            Cargando datos
           </span>
         </div>
       ) : null}
@@ -257,10 +257,10 @@ export function CandleChart({ candles, loading, emptyMessage }: CandleChartProps
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
           <div className="max-w-sm rounded-md border border-border/70 bg-surface/90 px-4 py-3 text-center shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md">
             <p className="font-mono text-[10px] uppercase tracking-widest text-gray-400">
-              Waiting For Data
+              Esperando datos
             </p>
             <p className="mt-2 text-sm text-gray-200">
-              {emptyMessage ?? "No candle data available yet."}
+              {emptyMessage ?? "Sin datos de velas disponibles aún."}
             </p>
           </div>
         </div>
@@ -374,7 +374,7 @@ function formatCrosshairTime(time: Time): string {
     return "-";
   }
 
-  return new Date(timestamp * 1000).toLocaleString("en-US", {
+  return new Date(timestamp * 1000).toLocaleString("es-ES", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",

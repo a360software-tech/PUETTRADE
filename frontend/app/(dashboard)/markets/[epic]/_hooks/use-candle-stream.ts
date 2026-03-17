@@ -153,7 +153,7 @@ export function useCandleStream({
     };
 
     eventSource.onerror = () => {
-      dispatch({ type: "connection_error", error: "Connection lost" });
+      dispatch({ type: "connection_error", error: "Conexi\u00f3n perdida" });
       eventSource.close();
       if (eventSourceRef.current === eventSource) {
         eventSourceRef.current = null;

@@ -19,13 +19,13 @@ const watchlist = [
   {
     epic: "IX.D.DAX.IFD.IP",
     name: "Germany 40",
-    type: "Index",
+    type: "Índice",
     change: "+0.85%",
   },
   {
     epic: "CS.D.GOLD.CFD.IP",
     name: "Spot Gold",
-    type: "Commodity",
+    type: "Materia prima",
     change: "+1.20%",
   },
 ];
@@ -33,7 +33,7 @@ const watchlist = [
 export function MarketTerminal({ epic }: { epic: string }) {
   const currentAsset = watchlist.find((w) => w.epic === epic) || {
     name: epic,
-    type: "Unknown",
+    type: "Desconocido",
     change: "0.00%",
   };
   const isPositive = currentAsset.change.startsWith("+");
@@ -50,7 +50,7 @@ export function MarketTerminal({ epic }: { epic: string }) {
             </span>
           </div>
           <nav className="hidden space-x-1 md:flex">
-            {["Trade", "Markets", "Portfolio", "Analytics"].map((item, i) => (
+            {["Trade", "Mercados", "Portafolio", "Análisis"].map((item, i) => (
               <button
                 key={item}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${i === 0 ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5 hover:text-white"}`}
@@ -65,7 +65,7 @@ export function MarketTerminal({ epic }: { epic: string }) {
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface-strong px-3 py-1">
             <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
             <span className="font-mono text-xs font-medium uppercase tracking-wider text-white">
-              Live Preview
+              Vista previa en vivo
             </span>
           </div>
           <LogoutButton />
@@ -79,7 +79,7 @@ export function MarketTerminal({ epic }: { epic: string }) {
         <aside className="flex w-[280px] shrink-0 flex-col border-r border-border/60 bg-surface-strong">
           <div className="flex items-center justify-between border-b border-border/60 p-3">
             <h2 className="font-sans text-xs font-bold uppercase tracking-widest text-gray-400">
-              Watchlist
+              Lista de seguimiento
             </h2>
             <button className="text-gray-400 hover:text-white">+</button>
           </div>
@@ -145,9 +145,9 @@ export function MarketTerminal({ epic }: { epic: string }) {
             </div>
 
             <div className="flex items-center gap-3">
-              <StatItem label="24h High" value="-" />
+              <StatItem label="Máx. 24h" value="-" />
               <div className="h-4 w-px bg-border/80" />
-              <StatItem label="24h Low" value="-" />
+              <StatItem label="Mín. 24h" value="-" />
               <div className="h-4 w-px bg-border/80" />
               <StatItem label="Vol" value="-" />
             </div>

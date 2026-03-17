@@ -44,7 +44,7 @@ export function useCandles({ epic, resolution, max }: UseCandlesParams): UseCand
           return;
         }
 
-        const detail = error instanceof Error ? error.message : "Unable to load candles";
+        const detail = error instanceof Error ? error.message : "No se pudieron cargar las velas";
 
         setState({
           data: null,

@@ -57,7 +57,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
           ))}
           <div className="ml-2 h-4 w-px bg-border/60" />
           <button className="px-2 text-xs text-gray-400 hover:text-white">
-            Indicators
+            Indicadores
           </button>
           <button className="px-2 text-xs text-gray-400 hover:text-white">
             Compare
@@ -74,7 +74,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
           {isLiveOnly && (
             <span className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] uppercase text-amber-300">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-              Live Only
+              Solo en vivo
             </span>
           )}
         </div>
@@ -88,8 +88,8 @@ export function MarketChartCard({ epic }: { epic: string }) {
             loading={isLoading}
             emptyMessage={
               isLiveOnly
-                ? "Historical data unavailable. Waiting for live candles from IG stream."
-                : "No candle data available yet."
+                ? "Datos históricos no disponibles. Esperando velas en vivo desde el stream de IG."
+                : "Sin datos de velas disponibles aún."
             }
           />
         </div>
@@ -97,7 +97,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
         {/* Right Panel - Order / Details */}
         <aside className="w-[300px] shrink-0 bg-surface flex flex-col">
           <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
-            <span className="font-sans text-sm font-semibold">Order Book</span>
+            <span className="font-sans text-sm font-semibold">Libro de órdenes</span>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
@@ -123,7 +123,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
             <div className="mt-auto space-y-3">
               <div className="rounded-lg border border-border/40 bg-surface-strong p-3">
                 <h4 className="font-sans text-xs font-semibold text-gray-400 mb-2">
-                  Market Stats
+                  Estadísticas
                 </h4>
                 <div className="space-y-2">
                   <div className="flex justify-between font-mono text-xs">
@@ -131,11 +131,11 @@ export function MarketChartCard({ epic }: { epic: string }) {
                     <span className="text-white">{resolution}</span>
                   </div>
                   <div className="flex justify-between font-mono text-xs">
-                    <span className="text-gray-500">Candles</span>
+                    <span className="text-gray-500">Velas</span>
                     <span className="text-white">{candles.length}</span>
                   </div>
                   <div className="flex justify-between font-mono text-xs">
-                    <span className="text-gray-500">API Calls</span>
+                    <span className="text-gray-500">Llamadas API</span>
                     <span className="text-white">
                       {formatAllowance(
                         data?.allowance_remaining,
@@ -150,7 +150,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
                         isStreaming ? "text-trade-up" : "text-gray-500"
                       }
                     >
-                      {isStreaming ? "Active" : "Inactive"}
+                      {isStreaming ? "Activo" : "Inactivo"}
                     </span>
                   </div>
                 </div>
@@ -158,7 +158,7 @@ export function MarketChartCard({ epic }: { epic: string }) {
 
               {(error || streamError) && (
                 <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
-                  <p className="font-semibold">Data Notice</p>
+                  <p className="font-semibold">Aviso de datos</p>
                   <p className="mt-1">{error || streamError}</p>
                 </div>
               )}

@@ -23,7 +23,7 @@ export function LogoutButton() {
       router.push("/login");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to close session");
+      setError(err instanceof Error ? err.message : "No se pudo cerrar la sesión");
     } finally {
       setIsLoading(false);
     }
@@ -42,7 +42,7 @@ export function LogoutButton() {
         disabled={isLoading}
         className="rounded-sm border border-border bg-surface-strong px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gray-200 transition hover:border-white/35 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isLoading ? "Closing..." : "Logout"}
+        {isLoading ? "Cerrando..." : "Salir"}
       </button>
     </div>
   );

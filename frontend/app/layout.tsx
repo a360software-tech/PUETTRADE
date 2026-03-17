@@ -16,7 +16,7 @@ const monoFont = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "PUETTRADE Terminal",
-  description: "Trading dashboard for IG Labs market exploration.",
+  description: "Terminal de trading para exploración de mercados en IG Labs.",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body className={`${displayFont.variable} ${monoFont.variable} bg-background text-foreground antialiased`}>
         {children}
       </body>

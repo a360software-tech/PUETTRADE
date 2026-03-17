@@ -26,7 +26,7 @@ export default function LoginPage() {
       });
       router.push("/markets/CS.D.EURUSD.CFD.IP");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
     } finally {
       setIsLoading(false);
     }
@@ -49,7 +49,7 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-border bg-surface p-6">
         <div>
           <label htmlFor="identifier" className="mb-2 block font-mono text-xs uppercase tracking-wider text-gray-400">
-            Username / Client ID
+            Usuario / ID de cliente
           </label>
           <input
             id="identifier"
@@ -57,14 +57,14 @@ export default function LoginPage() {
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             className="w-full rounded-sm border border-border bg-surface-strong px-4 py-3 font-mono text-sm text-white placeholder-gray-600 focus:border-accent focus:outline-none"
-            placeholder="Enter your IG username"
+            placeholder="Ingresa tu usuario de IG"
             required
           />
         </div>
 
         <div>
           <label htmlFor="password" className="mb-2 block font-mono text-xs uppercase tracking-wider text-gray-400">
-            Password
+            Contraseña
           </label>
           <input
             id="password"
@@ -72,14 +72,14 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-sm border border-border bg-surface-strong px-4 py-3 font-mono text-sm text-white placeholder-gray-600 focus:border-accent focus:outline-none"
-            placeholder="Enter your password"
+            placeholder="Ingresa tu contraseña"
             required
           />
         </div>
 
         <div>
           <label className="mb-2 block font-mono text-xs uppercase tracking-wider text-gray-400">
-            Account Type
+            Tipo de cuenta
           </label>
           <div className="flex gap-2">
             <button
@@ -124,16 +124,16 @@ export default function LoginPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              Connecting...
+              Conectando...
             </span>
           ) : (
-            "Connect to IG"
+            "Conectar con IG"
           )}
         </button>
       </form>
 
       <p className="mt-6 text-center font-mono text-[10px] uppercase tracking-wider text-gray-600">
-        Secure connection to IG Labs API
+        Conexión segura con IG Labs API
       </p>
     </div>
   );
