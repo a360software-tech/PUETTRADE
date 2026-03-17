@@ -87,23 +87,24 @@ class MarketDiscoveryService:
         auth_headers = self._get_auth_headers()
         data = await self._client.get_market(epic, auth_headers)
 
-        market = _as_mapping(data.get("market"))
+        instrument = _as_mapping(data.get("instrument"))
+        snapshot = _as_mapping(data.get("snapshot"))
 
         return MarketDetailResponse(
-            epic=market.get("epic", ""),
-            instrument_name=market.get("instrumentName", ""),
-            expiry=market.get("expiry"),
-            instrument_type=market.get("instrumentType", ""),
-            market_status=market.get("marketStatus", ""),
-            bid=market.get("bid"),
-            offer=market.get("offer"),
-            high=market.get("high"),
-            low=market.get("low"),
-            net_change=market.get("netChange"),
-            percentage_change=market.get("percentageChange"),
-            scaling_factor=market.get("scalingFactor"),
-            streaming_prices_available=market.get("streamingPricesAvailable", False),
-            delay_time=market.get("delayTime"),
+            epic=str(instrument.get("epic") or epic),
+            instrument_name=str(instrument.get("name") or instrument.get("marketId") or epic),
+            expiry=_as_str_or_none(instrument.get("expiry")),
+            instrument_type=str(instrument.get("type") or ""),
+            market_status=str(snapshot.get("marketStatus") or ""),
+            bid=_as_float(snapshot.get("bid")),
+            offer=_as_float(snapshot.get("offer")),
+            high=_as_float(snapshot.get("high")),
+            low=_as_float(snapshot.get("low")),
+            net_change=_as_float(snapshot.get("netChange")),
+            percentage_change=_as_float(snapshot.get("percentageChange")),
+            scaling_factor=_as_int(snapshot.get("scalingFactor")),
+            streaming_prices_available=bool(instrument.get("streamingPricesAvailable", False)),
+            delay_time=_as_int(snapshot.get("delayTime")),
         )
 
 
@@ -121,3 +122,27 @@ def _as_mapping(value: object) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _as_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_str_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
