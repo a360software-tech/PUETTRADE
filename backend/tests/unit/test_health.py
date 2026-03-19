@@ -37,7 +37,7 @@ def test_architecture_only_exposes_active_contexts() -> None:
     response = client.get("/api/v1/system/architecture")
 
     assert response.status_code == 200
-    assert response.json()["bounded_contexts"] == ["authentication", "market_data", "market_discovery"]
+    assert response.json()["bounded_contexts"] == ["authentication", "engine", "execution", "market_data", "market_discovery", "portfolio", "positions", "risk", "safety", "strategy"]
 
 
 def test_market_data_requires_authenticated_session() -> None:
