@@ -1,12 +1,12 @@
 import asyncio
 import logging
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 from typing import Callable, Optional
 
 from lightstreamer_client import LightstreamerClient, LightstreamerSubscription
+from market_data.domain.candles import BufferedCandle, stream_candle_buffer
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,6 @@ class LightstreamerGateway:
         self._subscriptions: dict[str, str] = {}
         self._listeners: dict[str, dict[str, Callable[[CandleUpdate], None]]] = {}
         self._candle_state: dict[str, dict[str, float | str]] = {}
-        self._recent_candles: dict[str, deque[CandleUpdate]] = {}
         self._connected = False
         self._lock = asyncio.Lock()
 
@@ -64,9 +63,12 @@ class LightstreamerGateway:
                 password,
                 endpoint
             )
+            client = self._client
+            if client is None:
+                raise RuntimeError("Lightstreamer client unavailable")
 
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._client.connect)
+            await loop.run_in_executor(None, client.connect)
 
             await asyncio.sleep(2)
             self._connected = True
@@ -84,7 +86,7 @@ class LightstreamerGateway:
             self._subscriptions.clear()
             self._listeners.clear()
             self._candle_state.clear()
-            self._recent_candles.clear()
+            stream_candle_buffer.clear()
 
             if self._client:
                 try:
@@ -125,13 +127,20 @@ class LightstreamerGateway:
         fields = ["BID_OPEN", "BID_HIGH", "BID_LOW", "BID_CLOSE", "CONS_END", "UTM", "LTV"]
 
         current_candle: dict[str, float | str] = self._candle_state.setdefault(subscription_key, {})
-        recent_candles = self._recent_candles.setdefault(subscription_key, deque(maxlen=500))
-
         def emit(update: CandleUpdate) -> None:
-            if recent_candles and recent_candles[-1].time == update.time:
-                recent_candles[-1] = update
-            else:
-                recent_candles.append(update)
+            stream_candle_buffer.upsert(
+                BufferedCandle(
+                    epic=update.epic,
+                    resolution=resolution,
+                    time=update.time,
+                    open_price=update.open_price,
+                    high=update.high,
+                    low=update.low,
+                    close=update.close,
+                    volume=update.volume,
+                    completed=update.completed,
+                )
+            )
 
             for listener in list(self._listeners.get(subscription_key, {}).values()):
                 try:
@@ -180,6 +189,16 @@ class LightstreamerGateway:
                     return
 
                 completed = cons_end == "1" if cons_end else False
+                close = float(bid_close)
+                if not _is_plausible_price(epic, close):
+                    logger.warning(
+                        "Discarded implausible candle update epic=%s resolution=%s item=%s close=%s",
+                        epic,
+                        resolution,
+                        item_name or item_name_expected,
+                        close,
+                    )
+                    return
 
                 timestamp_ms = int(utm) if utm else int(datetime.now().timestamp() * 1000)
                 candle_time = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%dT%H:%M:%S")
@@ -189,7 +208,6 @@ class LightstreamerGateway:
                     current_candle.clear()
 
                 if not current_candle:
-                    close = float(bid_close)
                     high = float(bid_high) if bid_high else close
                     low = float(bid_low) if bid_low else close
                     current_candle.update({
@@ -201,7 +219,6 @@ class LightstreamerGateway:
                         "volume": float(ltv) if ltv else 0.0,
                     })
                 else:
-                    close = float(bid_close)
                     high = float(bid_high) if bid_high else close
                     low = float(bid_low) if bid_low else close
                     current_candle["close"] = close
@@ -265,14 +282,39 @@ class LightstreamerGateway:
         self._subscriptions.pop(subscription_key, None)
         self._listeners.pop(subscription_key, None)
         self._candle_state.pop(subscription_key, None)
-        self._recent_candles.pop(subscription_key, None)
 
     def get_buffered_candles(self, epic: str, resolution: str, limit: int = 200) -> list[CandleUpdate]:
-        subscription_key = f"{epic}:{resolution}"
-        recent_candles = self._recent_candles.get(subscription_key)
-        if not recent_candles:
-            return []
-        return list(recent_candles)[-limit:]
+        candles = stream_candle_buffer.get(epic=epic, resolution=resolution, limit=limit)
+        return [
+            CandleUpdate(
+                epic=candle.epic,
+                time=candle.time,
+                open_price=candle.open_price,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume=candle.volume,
+                completed=candle.completed,
+            )
+            for candle in candles
+        ]
 
 
 lightstreamer_gateway = LightstreamerGateway()
+
+
+def _is_plausible_price(epic: str, price: float) -> bool:
+    code = epic.split(".")[2] if len(epic.split(".")) > 2 else epic
+    if len(code) == 6 and code.isalpha():
+        quote = code[3:]
+        if quote == "JPY":
+            return 10.0 <= price <= 1000.0
+        return 0.1 <= price <= 10.0
+
+    if "GOLD" in code or code == "XAUUSD":
+        return 100.0 <= price <= 10000.0
+
+    if code in {"DAX", "GER40", "DE40"} or epic.startswith("IX."):
+        return 1000.0 <= price <= 100000.0
+
+    return price > 0.0

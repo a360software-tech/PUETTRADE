@@ -12,6 +12,7 @@ from integrations.ig.streaming.lightstreamer import (
     lightstreamer_gateway,
 )
 from market_data.application.dto import Resolution
+from market_data.domain.candles import to_lightstreamer_resolution
 
 logger = logging.getLogger(__name__)
 
@@ -100,23 +101,8 @@ async def stream_candles(
     resolution: Resolution = Query(default="MINUTE"),
     auth_service: AuthService = Depends(get_auth_service),
 ):
-    resolution_map = {
-        "MINUTE": "1MINUTE",
-        "MINUTE_2": "2MINUTE",
-        "MINUTE_3": "3MINUTE",
-        "MINUTE_5": "5MINUTE",
-        "MINUTE_10": "10MINUTE",
-        "MINUTE_15": "15MINUTE",
-        "MINUTE_30": "30MINUTE",
-        "HOUR": "1HOUR",
-        "HOUR_2": "2HOUR",
-        "HOUR_3": "3HOUR",
-        "HOUR_4": "4HOUR",
-        "DAY": "1DAY",
-    }
-    
-    ls_resolution = resolution_map.get(resolution, "1MINUTE")
-    
+    ls_resolution = to_lightstreamer_resolution(resolution)
+
     return StreamingResponse(
         generate_sse_events(epic, ls_resolution, auth_service),
         media_type="text/event-stream",

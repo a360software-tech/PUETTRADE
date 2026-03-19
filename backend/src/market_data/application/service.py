@@ -4,8 +4,9 @@ from shared.config.settings import Settings, get_settings
 
 from authentication.application.service import AuthService
 from integrations.ig.rest.prices_client import IgPricesClient
-from integrations.ig.streaming.lightstreamer import lightstreamer_gateway
-from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery
+from integrations.ig.streaming.lightstreamer import CandleUpdate, lightstreamer_gateway
+from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery, Resolution
+from market_data.domain.candles import to_lightstreamer_resolution
 from shared.errors.base import IntegrationError
 
 _CACHE_TTL_SECONDS = 10.0
@@ -107,27 +108,13 @@ def _pick_price(price: dict[str, object]) -> float:
     return 0.0
 
 
-def _build_stream_fallback(epic: str, resolution: str, max_points: int) -> CandlesResponse | None:
-    resolution_map = {
-        "MINUTE": "1MINUTE",
-        "MINUTE_2": "2MINUTE",
-        "MINUTE_3": "3MINUTE",
-        "MINUTE_5": "5MINUTE",
-        "MINUTE_10": "10MINUTE",
-        "MINUTE_15": "15MINUTE",
-        "MINUTE_30": "30MINUTE",
-        "HOUR": "1HOUR",
-        "HOUR_2": "2HOUR",
-        "HOUR_3": "3HOUR",
-        "HOUR_4": "4HOUR",
-        "DAY": "1DAY",
-    }
-
+def _build_stream_fallback(epic: str, resolution: Resolution, max_points: int) -> CandlesResponse | None:
     buffered = lightstreamer_gateway.get_buffered_candles(
         epic=epic,
-        resolution=resolution_map.get(resolution, "1MINUTE"),
+        resolution=to_lightstreamer_resolution(resolution),
         limit=max_points,
     )
+    buffered = [candle for candle in buffered if _is_plausible_stream_candle(epic, candle)]
     if not buffered:
         return None
 
@@ -169,6 +156,10 @@ def _as_list_of_dicts(value: object) -> list[dict[str, object]]:
 def _as_float(value: object) -> float | None:
     if value is None:
         return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -182,3 +173,21 @@ def _as_int(value: object) -> int | None:
         return int(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _is_plausible_stream_candle(epic: str, candle: CandleUpdate) -> bool:
+    code = epic.split(".")[2] if len(epic.split(".")) > 2 else epic
+    close = candle.close
+    if len(code) == 6 and code.isalpha():
+        quote = code[3:]
+        if quote == "JPY":
+            return 10.0 <= close <= 1000.0
+        return 0.1 <= close <= 10.0
+
+    if "GOLD" in code or code == "XAUUSD":
+        return 100.0 <= close <= 10000.0
+
+    if code in {"DAX", "GER40", "DE40"} or epic.startswith("IX."):
+        return 1000.0 <= close <= 100000.0
+
+    return close > 0.0
