@@ -57,6 +57,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Legacy backend reference and local runtime state
+backend/core/
+backend/.runtime/
+
 # Editores y sistemas operativos
 .vscode/
 .idea/
