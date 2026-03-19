@@ -31,3 +31,24 @@ export type CandlesResponse = {
   allowance_remaining: number | null;
   allowance_total: number | null;
 };
+
+export type MarketDetailsResponse = {
+  epic: string;
+  instrument_name: string;
+  expiry: string | null;
+  instrument_type: string;
+  market_status: string;
+  bid: number | null;
+  offer: number | null;
+  high: number | null;
+  low: number | null;
+  net_change: number | null;
+  percentage_change: number | null;
+  scaling_factor: number | null;
+  streaming_prices_available: boolean;
+  delay_time: number | null;
+};
+
+export type WatchlistItemResponse = {
+  epic: string;
+};

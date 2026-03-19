@@ -1,4 +1,19 @@
-import type { CandlesResponse, Resolution } from "@/types/market-data";
+import type {
+  CandlesResponse,
+  MarketDetailsResponse,
+  Resolution,
+  WatchlistItemResponse,
+} from "@/types/market-data";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 type GetCandlesParams = {
   epic: string;
@@ -43,8 +58,41 @@ export async function getCandles({
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    throw new ApiError(await readErrorMessage(response), response.status);
   }
 
   return (await response.json()) as CandlesResponse;
 }
+
+export async function getMarketDetails(epic: string): Promise<MarketDetailsResponse> {
+  const response = await fetch(
+    `${apiBaseUrl()}/api/v1/markets/${encodeURIComponent(epic)}`,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status);
+  }
+
+  return (await response.json()) as MarketDetailsResponse;
+}
+
+export async function getWatchlist(): Promise<WatchlistItemResponse[]> {
+  const response = await fetch(`${apiBaseUrl()}/api/v1/markets/watchlist`, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status);
+  }
+
+  return (await response.json()) as WatchlistItemResponse[];
+}
+
+export type { MarketDetailsResponse };

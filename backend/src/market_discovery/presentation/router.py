@@ -7,6 +7,7 @@ from market_discovery.application.dto import (
     InstrumentResponse,
     MarketDetailResponse,
     MarketSearchResult,
+    WatchlistItemResponse,
 )
 from market_discovery.application.service import MarketDiscoveryService, get_market_discovery_service
 
@@ -20,6 +21,13 @@ async def get_categories(
     service: MarketDiscoveryServiceDep,
 ) -> list[CategoryResponse]:
     return await service.get_categories()
+
+
+@router.get("/watchlist", response_model=list[WatchlistItemResponse], summary="Get default watchlist epics")
+async def get_default_watchlist(
+    service: MarketDiscoveryServiceDep,
+) -> list[WatchlistItemResponse]:
+    return await service.get_default_watchlist()
 
 
 @router.get("/categories/{category_id}/instruments", response_model=list[InstrumentResponse], summary="Get instruments by category")

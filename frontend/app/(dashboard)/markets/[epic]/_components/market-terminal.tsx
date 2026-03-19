@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { getMarketDetails, type MarketDetailsResponse } from "@/lib/api/market-data";
+import { ApiError, getMarketDetails, getWatchlist, type MarketDetailsResponse } from "@/lib/api/market-data";
 
 import { MarketChartCard } from "./market-chart-card";
 import { LogoutButton } from "./logout-button";
@@ -16,38 +16,64 @@ type WatchlistMarket = WatchlistItem & {
   detail: MarketDetailsResponse | null;
 };
 
-const watchlist: WatchlistItem[] = [
-  {
-    epic: "CS.D.EURUSD.CFD.IP",
-  },
-  {
-    epic: "CS.D.GBPUSD.CFD.IP",
-  },
-  {
-    epic: "IX.D.DAX.IFD.IP",
-  },
-  {
-    epic: "CS.D.GOLD.CFD.IP",
-  },
+const fallbackWatchlist: WatchlistItem[] = [
+  { epic: "CS.D.EURUSD.CFD.IP" },
+  { epic: "CS.D.GBPUSD.CFD.IP" },
+  { epic: "CS.D.USDJPY.CFD.IP" },
+  { epic: "CS.D.AUDUSD.CFD.IP" },
+  { epic: "CS.D.NZDUSD.CFD.IP" },
+  { epic: "CS.D.USDCAD.CFD.IP" },
+  { epic: "CS.D.EURJPY.CFD.IP" },
+  { epic: "CS.D.GBPJPY.CFD.IP" },
+  { epic: "CS.D.EURGBP.CFD.IP" },
+  { epic: "CS.D.USDCHF.CFD.IP" },
 ];
 
 export function MarketTerminal({ epic }: { epic: string }) {
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(fallbackWatchlist);
   const [marketDetails, setMarketDetails] = useState<Record<string, MarketDetailsResponse | null>>({});
+  const [watchlistDetailsUnavailable, setWatchlistDetailsUnavailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadWatchlistDetails() {
-      const results = await Promise.all(
-        watchlist.map(async (item) => {
-          try {
-            const detail = await getMarketDetails(item.epic);
-            return [item.epic, detail] as const;
-          } catch {
-            return [item.epic, null] as const;
+      let activeWatchlist = fallbackWatchlist;
+
+      try {
+        const configuredWatchlist = await getWatchlist();
+        if (configuredWatchlist.length > 0) {
+          activeWatchlist = configuredWatchlist;
+        }
+      } catch {
+        activeWatchlist = fallbackWatchlist;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setWatchlist(activeWatchlist);
+      setWatchlistDetailsUnavailable(false);
+
+      const results: Array<readonly [string, MarketDetailsResponse | null]> = [];
+
+      for (const item of activeWatchlist) {
+        try {
+          const detail = await getMarketDetails(item.epic);
+          results.push([item.epic, detail] as const);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 401) {
+            if (!cancelled) {
+              setWatchlistDetailsUnavailable(true);
+              setMarketDetails({});
+            }
+            return;
           }
-        }),
-      );
+
+          results.push([item.epic, null] as const);
+        }
+      }
 
       if (cancelled) {
         return;
@@ -68,7 +94,7 @@ export function MarketTerminal({ epic }: { epic: string }) {
       ...item,
       detail: marketDetails[item.epic] ?? null,
     }));
-  }, [marketDetails]);
+  }, [marketDetails, watchlist]);
 
   const currentAsset = watchlistMarkets.find((item) => item.epic === epic) ?? {
     epic,
@@ -151,10 +177,10 @@ export function MarketTerminal({ epic }: { epic: string }) {
                   </div>
                   <div className="flex flex-col items-end">
                     <span className={`font-mono text-xs font-bold ${itemPositive ? 'text-trade-up' : 'text-trade-down'}`}>
-                      {formatPercentage(item.detail?.percentage_change)}
+                      {watchlistDetailsUnavailable ? "—" : formatPercentage(item.detail?.percentage_change)}
                     </span>
                     <span className="font-mono text-[10px] text-gray-500">
-                      {instrumentTypeLabel(instrumentType)}
+                      {watchlistDetailsUnavailable ? "Session" : instrumentTypeLabel(instrumentType)}
                     </span>
                   </div>
                 </Link>

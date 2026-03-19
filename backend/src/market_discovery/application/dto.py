@@ -7,6 +7,10 @@ class CategoryResponse(BaseModel):
     name: str
 
 
+class WatchlistItemResponse(BaseModel):
+    epic: str
+
+
 class InstrumentResponse(BaseModel):
     epic: str
     instrument_name: str

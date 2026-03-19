@@ -9,6 +9,7 @@ from market_discovery.application.dto import (
     InstrumentResponse,
     MarketDetailResponse,
     MarketSearchResult,
+    WatchlistItemResponse,
 )
 from integrations.ig.rest.markets_client import IgMarketsClient
 
@@ -38,6 +39,9 @@ class MarketDiscoveryService:
                 name=cat.get("name", cat.get("code", "")),
             ))
         return categories
+
+    async def get_default_watchlist(self) -> list[WatchlistItemResponse]:
+        return [WatchlistItemResponse(epic=epic) for epic in self._settings.default_watchlist_epics]
 
     async def get_instruments(self, category_id: str) -> list[InstrumentResponse]:
         auth_headers = self._get_auth_headers()
