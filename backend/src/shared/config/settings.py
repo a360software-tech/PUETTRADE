@@ -24,6 +24,22 @@ class Settings(BaseSettings):
     ig_api_key: str = Field(default="", alias="IG_API_KEY")
     ig_api_url: str = Field(default="https://demo-api.ig.com/gateway/deal", alias="IG_API_URL")
     ig_timeout_seconds: float = Field(default=15.0, alias="IG_TIMEOUT_SECONDS")
+    execution_mode: str = Field(default="paper", alias="EXECUTION_MODE")
+    default_watchlist_epics: list[str] = Field(
+        default=[
+            "CS.D.EURUSD.CFD.IP",
+            "CS.D.GBPUSD.CFD.IP",
+            "CS.D.USDJPY.CFD.IP",
+            "CS.D.AUDUSD.CFD.IP",
+            "CS.D.NZDUSD.CFD.IP",
+            "CS.D.USDCAD.CFD.IP",
+            "CS.D.EURJPY.CFD.IP",
+            "CS.D.GBPJPY.CFD.IP",
+            "CS.D.EURGBP.CFD.IP",
+            "CS.D.USDCHF.CFD.IP",
+        ],
+        alias="DEFAULT_WATCHLIST_EPICS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
