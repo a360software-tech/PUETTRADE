@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { getIgSessionStatus, type IgSessionStatus } from "@/lib/api/ig-auth";
 import { ApiError, getMarketDetails, getWatchlist, type MarketDetailsResponse } from "@/lib/api/market-data";
 
+import { AppSignOutButton } from "./app-sign-out-button";
 import { MarketChartCard } from "./market-chart-card";
 import { LogoutButton } from "./logout-button";
 
@@ -33,6 +35,7 @@ export function MarketTerminal({ epic }: { epic: string }) {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(fallbackWatchlist);
   const [marketDetails, setMarketDetails] = useState<Record<string, MarketDetailsResponse | null>>({});
   const [watchlistDetailsUnavailable, setWatchlistDetailsUnavailable] = useState(false);
+  const [igStatus, setIgStatus] = useState<IgSessionStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +92,29 @@ export function MarketTerminal({ epic }: { epic: string }) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadIgStatus() {
+      try {
+        const status = await getIgSessionStatus();
+        if (!cancelled) {
+          setIgStatus(status);
+        }
+      } catch {
+        if (!cancelled) {
+          setIgStatus(null);
+        }
+      }
+    }
+
+    void loadIgStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const watchlistMarkets = useMemo<WatchlistMarket[]>(() => {
     return watchlist.map((item) => ({
       ...item,
@@ -128,12 +154,21 @@ export function MarketTerminal({ epic }: { epic: string }) {
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface-strong px-3 py-1">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+            <div
+              className={`h-2 w-2 rounded-full ${igStatus?.authenticated ? "animate-pulse bg-trade-up" : "bg-danger"}`}
+            />
             <span className="font-mono text-xs font-medium uppercase tracking-wider text-white">
-              Live Preview
+              {igStatus?.authenticated ? "IG Connected" : "IG Preview Mode"}
             </span>
           </div>
+          <Link
+            href="/connect-ig"
+            className="rounded-sm border border-border bg-surface-strong px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-gray-200 transition hover:border-white/35 hover:text-white"
+          >
+            {igStatus?.authenticated ? "IG settings" : "Connect IG"}
+          </Link>
           <LogoutButton />
+          <AppSignOutButton />
           <div className="h-8 w-8 rounded-full border border-border bg-surface-muted" />
         </div>
       </header>
@@ -190,6 +225,23 @@ export function MarketTerminal({ epic }: { epic: string }) {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col bg-background">
+          {!igStatus?.authenticated ? (
+            <div className="flex items-center justify-between gap-4 border-b border-border/60 bg-danger/10 px-4 py-3">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-danger">Broker not connected</p>
+                <p className="mt-1 text-sm text-gray-300">
+                  El dashboard ya esta protegido con Better Auth, pero sigues en modo preview hasta conectar tu cuenta de IG.
+                </p>
+              </div>
+              <Link
+                href="/connect-ig"
+                className="rounded-sm bg-white px-4 py-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-black transition hover:bg-gray-200"
+              >
+                Conectar IG
+              </Link>
+            </div>
+          ) : null}
+
           <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/60 bg-surface/50 px-4 backdrop-blur-md">
             <div className="flex items-center gap-4">
               <h1 className="font-sans text-xl font-bold text-white">
