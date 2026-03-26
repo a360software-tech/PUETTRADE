@@ -8,7 +8,7 @@ from engine.domain.models import EngineEpicState, EngineMode
 from safety.application.dto import RegisterTradeRequest, SafetyQuery
 from safety.application.service import SafetyService, get_safety_service
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import SQLitePersistence, get_persistence
+from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
 class EngineService:
@@ -16,7 +16,7 @@ class EngineService:
         self,
         execution_service: ExecutionService,
         safety_service: SafetyService,
-        persistence: SQLitePersistence | None = None,
+        persistence: DatabasePersistence | None = None,
     ) -> None:
         self._execution_service = execution_service
         self._safety_service = safety_service

@@ -8,6 +8,7 @@ from integrations.ig.streaming.lightstreamer import CandleUpdate, lightstreamer_
 from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery, Resolution
 from market_data.application.ports import HistoricalMarketDataPort, StreamingMarketDataPort
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer, supports_buffered_resolution, to_lightstreamer_resolution
+from market_data.infrastructure.candle_repository import CandleRepository, get_candle_repository, reseed_buffer_from_persistence
 from shared.errors.base import IntegrationError
 
 _CACHE_TTL_SECONDS = 10.0
@@ -15,9 +16,10 @@ _candle_cache: dict[tuple[str, str, int, str | None, str | None, str], tuple[flo
 
 
 class MarketDataService(HistoricalMarketDataPort):
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, repository: CandleRepository | None = None) -> None:
         self._settings = settings
         self._client = IgPricesClient(settings)
+        self._repository = repository or get_candle_repository()
 
     async def get_candles(
         self,
@@ -26,14 +28,26 @@ class MarketDataService(HistoricalMarketDataPort):
         access_token: str | None,
         auth_service: AuthService,
     ) -> CandlesResponse:
-        if not access_token:
-            from shared.errors.base import NotAuthenticatedError
-            raise NotAuthenticatedError("No access token provided")
-
         cache_key = (epic, query.resolution, query.max, query.from_, query.to, access_token)
         cached = _candle_cache.get(cache_key)
         if cached and monotonic() - cached[0] < _CACHE_TTL_SECONDS:
             return cached[1].model_copy(deep=True)
+
+        persisted = reseed_buffer_from_persistence(self._repository, epic, query.resolution, query.max)
+        if persisted and (len(persisted) >= query.max or not access_token):
+            response = CandlesResponse(
+                epic=epic,
+                resolution=query.resolution,
+                candles=persisted[-query.max:],
+                allowance_remaining=None,
+                allowance_total=None,
+            )
+            _candle_cache[cache_key] = (monotonic(), response.model_copy(deep=True))
+            return response
+
+        if not access_token:
+            from shared.errors.base import NotAuthenticatedError
+            raise NotAuthenticatedError("No access token provided")
 
         tokens = await auth_service.get_session_tokens()
         
@@ -77,6 +91,7 @@ class MarketDataService(HistoricalMarketDataPort):
             allowance_remaining=_as_int(allowance.get("remainingAllowance")),
             allowance_total=_as_int(allowance.get("totalAllowance")),
         )
+        self._repository.upsert_many(epic, query.resolution, response.candles, source="rest")
         _seed_stream_buffer_from_history(epic=epic, resolution=query.resolution, candles=response.candles)
         _candle_cache[cache_key] = (monotonic(), response.model_copy(deep=True))
         return response

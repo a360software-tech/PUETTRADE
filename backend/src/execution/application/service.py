@@ -15,7 +15,7 @@ from positions.domain.models import Position
 from risk.application.service import RiskService, get_risk_service
 from shared.config.settings import Settings, get_settings
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import SQLitePersistence, get_persistence
+from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
 class PaperExecutionGateway(ExecutionPort):
@@ -168,7 +168,7 @@ class ExecutionService:
         risk_service: RiskService,
         positions_service: PositionsService,
         auth_service: AuthService,
-        persistence: SQLitePersistence | None = None,
+        persistence: DatabasePersistence | None = None,
     ) -> None:
         self._settings = settings
         self._risk_service = risk_service

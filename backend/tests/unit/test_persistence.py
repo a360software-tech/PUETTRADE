@@ -8,10 +8,10 @@ from execution.application.service import ExecutionService
 from portfolio.application.service import PortfolioService
 from positions.application.dto import CreatePositionFromSignalRequest
 from positions.application.service import PositionsService
-from risk.application.service import get_risk_service
+from risk.application.service import RiskService, get_risk_service
 from safety.application.service import SafetyService
 from shared.config.settings import get_settings
-from shared.infrastructure.persistence import SQLitePersistence
+from shared.infrastructure.persistence import DatabasePersistence
 from strategy.application.service import get_strategy_service
 from strategy.domain.models import SignalSide, StrategySignal
 
@@ -25,7 +25,7 @@ class _AuthStub:
 
 
 def test_positions_service_loads_persisted_positions(tmp_path: Path) -> None:
-    persistence = SQLitePersistence(tmp_path / "positions.sqlite3")
+    persistence = DatabasePersistence(tmp_path / "positions.sqlite3")
     first = PositionsService(get_strategy_service(), persistence=persistence)
 
     first.open_from_signal(
@@ -47,7 +47,7 @@ def test_positions_service_loads_persisted_positions(tmp_path: Path) -> None:
 
 
 def test_engine_service_loads_persisted_mode_and_epics(tmp_path: Path) -> None:
-    persistence = SQLitePersistence(tmp_path / "engine.sqlite3")
+    persistence = DatabasePersistence(tmp_path / "engine.sqlite3")
     positions = PositionsService(get_strategy_service(), persistence=persistence)
     execution = ExecutionService(get_settings(), get_risk_service(), positions, _AuthStub(), persistence=persistence)
     safety = SafetyService(get_settings(), _AuthStub(), PortfolioService(get_settings(), positions, _AuthStub()))
@@ -63,9 +63,10 @@ def test_engine_service_loads_persisted_mode_and_epics(tmp_path: Path) -> None:
 
 
 def test_execution_service_persists_execution_events(tmp_path: Path) -> None:
-    persistence = SQLitePersistence(tmp_path / "execution.sqlite3")
+    persistence = DatabasePersistence(tmp_path / "execution.sqlite3")
     positions = PositionsService(get_strategy_service(), persistence=persistence)
-    execution = ExecutionService(get_settings(), get_risk_service(), positions, _AuthStub(), persistence=persistence)
+    risk = RiskService(get_strategy_service(), positions)
+    execution = ExecutionService(get_settings(), risk, positions, _AuthStub(), persistence=persistence)
 
     asyncio.run(
         execution.execute_from_signal(

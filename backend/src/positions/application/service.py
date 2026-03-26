@@ -5,12 +5,12 @@ from uuid import uuid4
 from positions.application.dto import CreatePositionFromSignalRequest, OpenLivePositionRequest
 from positions.domain.models import Position, PositionStatus
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import SQLitePersistence, get_persistence
+from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 from strategy.application.service import StrategyService, get_strategy_service
 
 
 class PositionsService:
-    def __init__(self, strategy_service: StrategyService, persistence: SQLitePersistence | None = None) -> None:
+    def __init__(self, strategy_service: StrategyService, persistence: DatabasePersistence | None = None) -> None:
         self._strategy_service = strategy_service
         self._persistence = persistence or get_persistence()
         self._positions: dict[str, Position] = {
@@ -111,7 +111,7 @@ def _calculate_pnl_points(side: str, entry_price: float, close_price: float) -> 
     return entry_price - close_price
 
 
-def _persist_position(persistence: SQLitePersistence, position: Position) -> None:
+def _persist_position(persistence: DatabasePersistence, position: Position) -> None:
     persistence.save_position(
         position_id=position.id,
         payload=position.model_dump(mode="json"),
@@ -121,7 +121,7 @@ def _persist_position(persistence: SQLitePersistence, position: Position) -> Non
     )
 
 
-def _load_persisted_positions(persistence: SQLitePersistence) -> list[Position]:
+def _load_persisted_positions(persistence: DatabasePersistence) -> list[Position]:
     return [Position.model_validate(payload) for payload in persistence.load_positions()]
 
 
