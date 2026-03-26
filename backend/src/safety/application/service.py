@@ -27,6 +27,22 @@ class SafetyService:
 
         auth_status = self._auth_service.get_status()
         requires_broker_session = self._resolve_mode(query.execution_mode) == ExecutionMode.IG
+        live_config_ok = True
+        live_config_detail = "Live IG trading policy allows execution"
+        if requires_broker_session and self._settings.ig_environment != "live":
+            live_config_ok = False
+            live_config_detail = "IG execution requires the backend to run in the live IG environment"
+        elif requires_broker_session and not self._settings.allow_live_trading:
+            live_config_ok = False
+            live_config_detail = "Live IG trading is blocked by configuration"
+        checks.append(
+            SafetyCheck(
+                name="live_trading_configuration",
+                passed=live_config_ok,
+                detail=live_config_detail,
+            )
+        )
+
         auth_ok = True if not requires_broker_session else auth_status.authenticated
         checks.append(
             SafetyCheck(

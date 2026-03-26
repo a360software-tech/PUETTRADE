@@ -6,6 +6,7 @@ from authentication.application.service import AuthService
 from integrations.ig.rest.prices_client import IgPricesClient
 from integrations.ig.streaming.lightstreamer import CandleUpdate, lightstreamer_gateway
 from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery, Resolution
+from market_data.application.ports import HistoricalMarketDataPort, StreamingMarketDataPort
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer, supports_buffered_resolution, to_lightstreamer_resolution
 from shared.errors.base import IntegrationError
 
@@ -13,7 +14,7 @@ _CACHE_TTL_SECONDS = 10.0
 _candle_cache: dict[tuple[str, str, int, str | None, str | None, str], tuple[float, CandlesResponse]] = {}
 
 
-class MarketDataService:
+class MarketDataService(HistoricalMarketDataPort):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._client = IgPricesClient(settings)
@@ -110,7 +111,7 @@ def _pick_price(price: dict[str, object]) -> float:
 
 
 def _build_stream_fallback(epic: str, resolution: Resolution, max_points: int) -> CandlesResponse | None:
-    buffered = lightstreamer_gateway.get_buffered_candles(
+    buffered = _streaming_port().get_buffered_candles(
         epic=epic,
         resolution=to_lightstreamer_resolution(resolution),
         limit=max_points,
@@ -213,3 +214,7 @@ def _seed_stream_buffer_from_history(epic: str, resolution: Resolution, candles:
         )
         for candle in candles
     )
+
+
+def _streaming_port() -> StreamingMarketDataPort:
+    return lightstreamer_gateway

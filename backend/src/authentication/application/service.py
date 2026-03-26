@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from shared.config.settings import Settings, get_settings
-from shared.errors.base import AuthenticationError, NotAuthenticatedError
+from shared.errors.base import ApplicationError, AuthenticationError, NotAuthenticatedError
 
 from authentication.application.dto import (
     LoginRequest,
@@ -46,8 +46,10 @@ session_manager = SessionManager()
 class AuthService:
     def __init__(self, settings: Settings) -> None:
         self._client = IgSessionClient(settings)
+        self._settings = settings
 
     async def login(self, request: LoginRequest) -> LoginResponse:
+        self._validate_requested_account_type(request.account_type)
         ig_response = await self._client.login(
             IgLoginCommand(identifier=request.identifier, password=request.password)
         )
@@ -128,6 +130,19 @@ class AuthService:
         if not session.access_token:
             raise NotAuthenticatedError("No access token provided")
         return session.access_token
+
+    def _validate_requested_account_type(self, account_type: str) -> None:
+        expected = self._settings.ig_environment
+        if account_type != expected:
+            raise ApplicationError(
+                f"This backend is configured for IG {expected} accounts only",
+                status_code=409,
+            )
+        if expected == "live" and not self._settings.allow_live_trading:
+            raise ApplicationError(
+                "Live IG trading is blocked by configuration",
+                status_code=409,
+            )
 
 
 def get_auth_service() -> AuthService:

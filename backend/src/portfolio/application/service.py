@@ -1,21 +1,15 @@
-from typing import Protocol
-
 from authentication.application.service import AuthService, get_auth_service
 from execution.domain.models import ExecutionMode
 from integrations.ig.rest.trading_client import IgTradingClient
 from portfolio.application.dto import PortfolioPositionsResponse, PortfolioQuery, PortfolioReconciliationResponse
+from portfolio.application.ports import PortfolioPort
 from portfolio.domain.models import PortfolioDiscrepancy, PortfolioProviderPosition, PortfolioReconciliationReport
 from positions.application.service import PositionsService, get_positions_service
 from positions.domain.models import Position, PositionStatus
 from shared.config.settings import Settings, get_settings
 
 
-class PortfolioProvider(Protocol):
-    async def list_open_positions(self) -> list[PortfolioProviderPosition]:
-        ...
-
-
-class PaperPortfolioProvider:
+class PaperPortfolioProvider(PortfolioPort):
     def __init__(self, positions_service: PositionsService) -> None:
         self._positions_service = positions_service
 
@@ -37,7 +31,7 @@ class PaperPortfolioProvider:
         ]
 
 
-class IgPortfolioProvider:
+class IgPortfolioProvider(PortfolioPort):
     def __init__(self, settings: Settings, auth_service: AuthService) -> None:
         self._client = IgTradingClient(settings)
         self._auth_service = auth_service
@@ -168,7 +162,7 @@ class PortfolioService:
             return ExecutionMode.IG
         return ExecutionMode.PAPER
 
-    def _provider_for(self, mode: ExecutionMode) -> PortfolioProvider:
+    def _provider_for(self, mode: ExecutionMode) -> PortfolioPort:
         if mode == ExecutionMode.IG:
             return self._ig_provider
         return self._paper_provider

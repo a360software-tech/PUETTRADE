@@ -1,5 +1,3 @@
-from typing import Protocol
-
 from authentication.application.service import AuthService, get_auth_service
 from execution.application.dto import (
     CloseExecutionRequest,
@@ -8,6 +6,7 @@ from execution.application.dto import (
     ExecuteLiveRequest,
     ExecuteSignalRequest,
 )
+from execution.application.ports import ExecutionPort
 from execution.domain.models import ExecutionMode, ExecutionRecord, ExecutionStatus
 from integrations.ig.rest.trading_client import IgTradingClient
 from positions.application.dto import CreatePositionFromSignalRequest
@@ -19,20 +18,7 @@ from shared.errors.base import ApplicationError
 from shared.infrastructure.persistence import SQLitePersistence, get_persistence
 
 
-class ExecutionGateway(Protocol):
-    async def open_position(
-        self,
-        *,
-        epic: str,
-        decision,
-    ) -> tuple[ExecutionRecord, Position]:
-        ...
-
-    async def close_position(self, *, position: Position, request: CloseExecutionRequest) -> tuple[ExecutionRecord, Position]:
-        ...
-
-
-class PaperExecutionGateway:
+class PaperExecutionGateway(ExecutionPort):
     def __init__(self, positions_service: PositionsService) -> None:
         self._positions_service = positions_service
 
@@ -72,7 +58,7 @@ class PaperExecutionGateway:
         )
 
 
-class IgExecutionGateway:
+class IgExecutionGateway(ExecutionPort):
     def __init__(self, settings: Settings, auth_service: AuthService, positions_service: PositionsService) -> None:
         self._client = IgTradingClient(settings)
         self._auth_service = auth_service
@@ -227,10 +213,17 @@ class ExecutionService:
         self,
         explicit_mode: ExecutionMode | None,
         fallback_mode: str | None = None,
-    ) -> ExecutionGateway:
+    ) -> ExecutionPort:
         requested = explicit_mode.value if explicit_mode is not None else fallback_mode or self._settings.execution_mode
         mode = requested.lower()
         if mode == ExecutionMode.IG.value:
+            if self._settings.ig_environment != "live":
+                raise ApplicationError(
+                    "IG execution requires the backend to run in the live IG environment",
+                    status_code=409,
+                )
+            if not self._settings.allow_live_trading:
+                raise ApplicationError("Live IG trading is blocked by configuration", status_code=409)
             return self._ig_gateway
         return self._paper_gateway
 

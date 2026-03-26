@@ -1,7 +1,11 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+IgEnvironment = Literal["demo", "live"]
 
 
 class Settings(BaseSettings):
@@ -23,6 +27,9 @@ class Settings(BaseSettings):
 
     ig_api_key: str = Field(default="", alias="IG_API_KEY")
     ig_api_url: str = Field(default="https://demo-api.ig.com/gateway/deal", alias="IG_API_URL")
+    ig_environment: IgEnvironment = Field(default="demo", alias="IG_ENVIRONMENT")
+    allow_live_trading: bool = Field(default=False, alias="ALLOW_LIVE_TRADING")
+    ig_lightstreamer_url: str = Field(default="https://demo-apd.marketdatasystems.com", alias="IG_LIGHTSTREAMER_URL")
     ig_timeout_seconds: float = Field(default=15.0, alias="IG_TIMEOUT_SECONDS")
     execution_mode: str = Field(default="paper", alias="EXECUTION_MODE")
     default_watchlist_epics: list[str] = Field(
@@ -47,6 +54,33 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @property
+    def live_trading_enabled(self) -> bool:
+        return self.ig_environment == "live" and self.allow_live_trading
+
+    @property
+    def broker_environment_label(self) -> str:
+        return "IG Markets (LIVE)" if self.ig_environment == "live" else "IG Markets (DEMO)"
+
+    @model_validator(mode="after")
+    def validate_ig_environment(self) -> "Settings":
+        api_url = self.ig_api_url.lower()
+        stream_url = self.ig_lightstreamer_url.lower()
+
+        if self.ig_environment == "demo":
+            if "api.ig.com" in api_url and "demo-api.ig.com" not in api_url:
+                raise ValueError("IG demo environment must use a demo API URL")
+            if "apd.marketdatasystems.com" in stream_url and "demo-apd.marketdatasystems.com" not in stream_url:
+                raise ValueError("IG demo environment must use a demo Lightstreamer URL")
+
+        if self.ig_environment == "live":
+            if "demo-api.ig.com" in api_url:
+                raise ValueError("IG live environment cannot use the demo API URL")
+            if "demo-apd.marketdatasystems.com" in stream_url:
+                raise ValueError("IG live environment cannot use the demo Lightstreamer URL")
+
+        return self
 
 
 @lru_cache
