@@ -37,6 +37,7 @@ async def generate_sse_events(
 
         credentials = LightstreamerCredentials(
             account_id=tokens.account_id,
+            access_token=auth_service.get_access_token(),
             cst=tokens.cst,
             x_security_token=tokens.x_security_token,
             endpoint=status.lightstreamer_endpoint or "https://demo-apd.marketdatasystems.com",

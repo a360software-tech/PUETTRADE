@@ -35,3 +35,4 @@ def test_safety_service_blocks_ig_trade_without_authenticated_session() -> None:
 
     assert report.can_open_new_trade is False
     assert any(check.name == "authenticated_session" and not check.passed for check in report.checks)
+    assert any(check.name == "broker_session_health" and not check.passed for check in report.checks)

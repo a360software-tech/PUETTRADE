@@ -8,6 +8,12 @@ class IgMarketsClient(IgRestClient):
     async def get_market(self, epic: str, auth_headers: dict[str, str]) -> dict[str, object]:
         return await self.request_json("GET", f"/markets/{epic}", extra_headers={**auth_headers, "Version": "4"})
 
+    async def get_market_status(self, epic: str, auth_headers: dict[str, str]) -> dict[str, object]:
+        return await self.get_market(epic, auth_headers)
+
+    async def get_last_price(self, epic: str, auth_headers: dict[str, str]) -> dict[str, object]:
+        return await self.get_market(epic, auth_headers)
+
     async def get_categories(self, auth_headers: dict[str, str]) -> dict[str, object]:
         return await self.request_json("GET", "/categories", extra_headers=auth_headers)
 

@@ -3,7 +3,7 @@ from typing import Any
 from shared.config.settings import Settings, get_settings
 from shared.errors.base import AuthenticationError
 
-from authentication.application.service import session_manager
+from authentication.application.service import AuthService, get_auth_service, session_manager
 from market_discovery.application.dto import (
     CategoryResponse,
     InstrumentResponse,
@@ -15,21 +15,26 @@ from integrations.ig.rest.markets_client import IgMarketsClient
 
 
 class MarketDiscoveryService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, auth_service: AuthService | None = None) -> None:
         self._client = IgMarketsClient(settings)
         self._settings = settings
+        self._auth_service = auth_service or get_auth_service()
 
-    def _get_auth_headers(self) -> dict[str, str]:
+    async def _get_auth_headers(self) -> dict[str, str]:
         session = session_manager.require_session()
         if not session.access_token:
             raise AuthenticationError()
+        tokens = await self._auth_service.get_session_tokens()
         return {
             "Authorization": f"Bearer {session.access_token}",
             "X-IG-API-KEY": self._settings.ig_api_key,
+            "CST": tokens.cst,
+            "X-SECURITY-TOKEN": tokens.x_security_token,
+            "IG-ACCOUNT-ID": tokens.account_id,
         }
 
     async def get_categories(self) -> list[CategoryResponse]:
-        auth_headers = self._get_auth_headers()
+        auth_headers = await self._get_auth_headers()
         data = await self._client.get_categories(auth_headers)
 
         categories: list[CategoryResponse] = []
@@ -44,7 +49,7 @@ class MarketDiscoveryService:
         return [WatchlistItemResponse(epic=epic) for epic in self._settings.default_watchlist_epics]
 
     async def get_instruments(self, category_id: str) -> list[InstrumentResponse]:
-        auth_headers = self._get_auth_headers()
+        auth_headers = await self._get_auth_headers()
         data = await self._client.get_instruments(category_id, auth_headers)
 
         instruments: list[InstrumentResponse] = []
@@ -67,7 +72,7 @@ class MarketDiscoveryService:
         return instruments
 
     async def search_markets(self, search_term: str) -> list[MarketSearchResult]:
-        auth_headers = self._get_auth_headers()
+        auth_headers = await self._get_auth_headers()
         data = await self._client.search(search_term, auth_headers)
 
         results: list[MarketSearchResult] = []
@@ -88,7 +93,7 @@ class MarketDiscoveryService:
         return results
 
     async def get_market_detail(self, epic: str) -> MarketDetailResponse:
-        auth_headers = self._get_auth_headers()
+        auth_headers = await self._get_auth_headers()
         data = await self._client.get_market(epic, auth_headers)
 
         instrument = _as_mapping(data.get("instrument"))
@@ -110,6 +115,22 @@ class MarketDiscoveryService:
             streaming_prices_available=bool(instrument.get("streamingPricesAvailable", False)),
             delay_time=_as_int(snapshot.get("delayTime")),
         )
+
+    async def get_market_status(self, epic: str) -> str:
+        auth_headers = await self._get_auth_headers()
+        data = await self._client.get_market_status(epic, auth_headers)
+        snapshot = _as_mapping(data.get("snapshot"))
+        return str(snapshot.get("marketStatus") or "UNKNOWN")
+
+    async def get_last_price(self, epic: str) -> float | None:
+        auth_headers = await self._get_auth_headers()
+        data = await self._client.get_last_price(epic, auth_headers)
+        snapshot = _as_mapping(data.get("snapshot"))
+        bid = _as_float(snapshot.get("bid"))
+        offer = _as_float(snapshot.get("offer"))
+        if bid is not None and offer is not None:
+            return (bid + offer) / 2
+        return bid or offer
 
 
 def get_market_discovery_service() -> MarketDiscoveryService:

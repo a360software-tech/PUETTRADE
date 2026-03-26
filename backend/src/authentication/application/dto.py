@@ -35,6 +35,12 @@ class SessionStatusResponse(BaseModel):
     lightstreamer_endpoint: str | None = None
 
 
+class BrokerSessionHealthResponse(BaseModel):
+    alive: bool
+    detail: str
+    account_id: str | None = None
+
+
 class StreamingTokensResponse(BaseModel):
     cst: str
     x_security_token: str

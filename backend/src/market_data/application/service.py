@@ -87,7 +87,7 @@ class MarketDataService(HistoricalMarketDataPort):
         response = CandlesResponse(
             epic=epic,
             resolution=query.resolution,
-            candles=[_map_price_to_candle_item(price) for price in prices],
+            candles=[_map_price_to_candle_item(epic, price) for price in prices],
             allowance_remaining=_as_int(allowance.get("remainingAllowance")),
             allowance_total=_as_int(allowance.get("totalAllowance")),
         )
@@ -101,7 +101,7 @@ def get_market_data_service() -> MarketDataService:
     return MarketDataService(get_settings())
 
 
-def _map_price_to_candle_item(price: dict[str, object]) -> CandleItemResponse:
+def _map_price_to_candle_item(epic: str, price: dict[str, object]) -> CandleItemResponse:
     open_price = _as_dict(price.get("openPrice"))
     high_price = _as_dict(price.get("highPrice"))
     low_price = _as_dict(price.get("lowPrice"))
@@ -109,12 +109,35 @@ def _map_price_to_candle_item(price: dict[str, object]) -> CandleItemResponse:
 
     return CandleItemResponse(
         time=str(price.get("snapshotTimeUTC") or price.get("snapshotTime") or ""),
-        open=_pick_price(open_price),
-        high=_pick_price(high_price),
-        low=_pick_price(low_price),
-        close=_pick_price(close_price),
+        open=_normalize_historical_price(epic, _pick_price(open_price)),
+        high=_normalize_historical_price(epic, _pick_price(high_price)),
+        low=_normalize_historical_price(epic, _pick_price(low_price)),
+        close=_normalize_historical_price(epic, _pick_price(close_price)),
         volume=_as_float(price.get("lastTradedVolume")),
     )
+
+
+def _normalize_historical_price(epic: str, value: float) -> float:
+    if value == 0.0:
+        return value
+        
+    code = epic.split(".")[2] if len(epic.split(".")) > 2 else epic
+    if len(code) == 6 and code.isalpha():
+        # If the value is already normal (e.g. 1.33642), don't alter it
+        if value < 100.0 and code[3:] != "JPY":
+            return value
+        if value < 1000.0 and code[3:] == "JPY":
+            return value
+
+        quote = code[3:]
+        if quote == "JPY":
+            if value >= 1000.0:
+                return value / 100.0
+        else:
+            if value >= 100.0:
+                return value / 10000.0
+                
+    return value
 
 
 def _pick_price(price: dict[str, object]) -> float:

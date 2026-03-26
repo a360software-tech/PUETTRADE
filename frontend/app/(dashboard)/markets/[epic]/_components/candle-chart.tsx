@@ -92,6 +92,11 @@ export function CandleChart({ candles, loading, emptyMessage }: CandleChartProps
       wickUpColor: "#00e59b",
       wickDownColor: "#ff3358",
       borderVisible: false,
+      priceFormat: {
+        type: 'price',
+        precision: 5,
+        minMove: 0.00001,
+      },
     });
 
     chartRef.current = chart;

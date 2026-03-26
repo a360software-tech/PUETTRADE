@@ -26,6 +26,13 @@ class _AuthStub:
     async def get_session_tokens(self):
         raise RuntimeError("unused")
 
+    async def is_session_alive(self):
+        class _Health:
+            alive = False
+            detail = "No active session"
+
+        return _Health()
+
 
 class _PortfolioStub:
     async def reconcile(self, query):
@@ -36,6 +43,11 @@ class _PortfolioStub:
             report = _Report()
 
         return _Response()
+
+
+class _MarketDiscoveryStub:
+    async def get_market_status(self, epic: str) -> str:
+        return "TRADEABLE"
 
 
 def test_settings_reject_live_environment_with_demo_urls() -> None:
@@ -54,6 +66,15 @@ def test_auth_service_rejects_account_type_mismatch() -> None:
         service._validate_requested_account_type("live")
 
 
+def test_auth_service_reports_session_health_without_active_session() -> None:
+    service = AuthService(Settings(IG_ENVIRONMENT="demo"))
+
+    health = asyncio.run(service.is_session_alive())
+
+    assert health.alive is False
+    assert health.detail == "No active session"
+
+
 def test_execution_service_blocks_ig_execution_when_live_trading_disabled() -> None:
     settings = Settings(
         IG_ENVIRONMENT="live",
@@ -68,7 +89,7 @@ def test_execution_service_blocks_ig_execution_when_live_trading_disabled() -> N
 
 
 def test_safety_blocks_ig_execution_when_backend_is_not_live() -> None:
-    service = SafetyService(Settings(IG_ENVIRONMENT="demo"), _AuthStub(), _PortfolioStub())
+    service = SafetyService(Settings(IG_ENVIRONMENT="demo"), _AuthStub(), _PortfolioStub(), _MarketDiscoveryStub())
 
     report = asyncio.run(
         service.evaluate(SafetyQuery(epic="CS.D.EURUSD.CFD.IP", execution_mode=ExecutionMode.IG))

@@ -10,6 +10,8 @@ from market_data.domain.candles import BufferedCandle
 @dataclass(slots=True)
 class MarketTick:
     epic: str
+    bid: float | None
+    offer: float | None
     price: float
     timestamp: str | float
     volume: float = 0.0
@@ -45,10 +47,22 @@ class StreamingMarketDataPort(Protocol):
     ) -> str:
         ...
 
+    async def subscribe_to_ticks(self, epic: str, callback: Callable) -> str:
+        ...
+
     async def unsubscribe(self, epic: str, resolution: str, listener_id: str) -> None:
         ...
 
+    async def unsubscribe_ticks(self, epic: str, listener_id: str) -> None:
+        ...
+
     def get_buffered_candles(self, epic: str, resolution: str, limit: int = 200) -> list:
+        ...
+
+    def get_latest_tick(self, epic: str):
+        ...
+
+    def get_latest_price(self, epic: str) -> float | None:
         ...
 
 

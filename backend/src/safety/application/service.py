@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from authentication.application.service import AuthService, get_auth_service
 from execution.domain.models import ExecutionMode
+from market_discovery.application.service import MarketDiscoveryService, get_market_discovery_service
 from portfolio.application.dto import PortfolioQuery
 from portfolio.application.service import PortfolioService, get_portfolio_service
 from safety.application.dto import RegisterTradeRequest, SafetyQuery
@@ -11,10 +12,17 @@ from shared.errors.base import NotAuthenticatedError
 
 
 class SafetyService:
-    def __init__(self, settings: Settings, auth_service: AuthService, portfolio_service: PortfolioService) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        auth_service: AuthService,
+        portfolio_service: PortfolioService,
+        market_discovery_service: MarketDiscoveryService,
+    ) -> None:
         self._settings = settings
         self._auth_service = auth_service
         self._portfolio_service = portfolio_service
+        self._market_discovery_service = market_discovery_service
         self._last_trade_at: datetime | None = None
         self._cooldowns: dict[str, datetime] = {}
         self._grace_period_seconds = 15
@@ -52,6 +60,20 @@ class SafetyService:
             )
         )
 
+        broker_health_ok = True
+        broker_health_detail = "Broker session is healthy"
+        if requires_broker_session:
+            session_health = await self._auth_service.is_session_alive()
+            broker_health_ok = session_health.alive
+            broker_health_detail = session_health.detail
+        checks.append(
+            SafetyCheck(
+                name="broker_session_health",
+                passed=broker_health_ok,
+                detail=broker_health_detail,
+            )
+        )
+
         grace_active = self.in_grace_period(now)
         checks.append(
             SafetyCheck(
@@ -68,6 +90,24 @@ class SafetyService:
                 name="epic_cooldown",
                 passed=not cooldown_active,
                 detail="Epic not in cooldown" if not cooldown_active else f"{epic} is in cooldown",
+            )
+        )
+
+        market_tradeable = True
+        market_detail = "Market is tradeable"
+        if requires_broker_session and epic is not None:
+            try:
+                market_status = await self._market_discovery_service.get_market_status(epic)
+                market_tradeable = market_status in {"TRADEABLE", "EDITS_ONLY"}
+                market_detail = f"Market status is {market_status}"
+            except NotAuthenticatedError:
+                market_tradeable = False
+                market_detail = "Market status requires an authenticated session"
+        checks.append(
+            SafetyCheck(
+                name="market_tradeable",
+                passed=market_tradeable,
+                detail=market_detail,
             )
         )
 
@@ -133,7 +173,7 @@ class SafetyService:
         return ExecutionMode.IG if self._settings.execution_mode.lower() == ExecutionMode.IG.value else ExecutionMode.PAPER
 
 
-_safety_service = SafetyService(get_settings(), get_auth_service(), get_portfolio_service())
+_safety_service = SafetyService(get_settings(), get_auth_service(), get_portfolio_service(), get_market_discovery_service())
 
 
 def get_safety_service() -> SafetyService:

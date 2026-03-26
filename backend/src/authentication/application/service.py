@@ -5,6 +5,7 @@ from shared.config.settings import Settings, get_settings
 from shared.errors.base import ApplicationError, AuthenticationError, NotAuthenticatedError
 
 from authentication.application.dto import (
+    BrokerSessionHealthResponse,
     LoginRequest,
     LoginResponse,
     RefreshRequest,
@@ -13,21 +14,33 @@ from authentication.application.dto import (
     StreamingTokensResponse,
 )
 from authentication.domain.models import UserSession
+from integrations.ig.models.account import AccountSnapshot
+from integrations.ig.rest.accounts_client import IgAccountsClient
 from integrations.ig.rest.session_client import IgLoginCommand, IgSessionClient
 
 
 class SessionManager:
     def __init__(self) -> None:
         self._current_session: Optional[UserSession] = None
+        self._stream_cst: Optional[str] = None
+        self._stream_xst: Optional[str] = None
+        self._stream_tokens_expire_at: Optional[datetime] = None
 
     def set_session(self, session: UserSession) -> None:
         self._current_session = session
+        # Clear streaming tokens on new session
+        self._stream_cst = None
+        self._stream_xst = None
+        self._stream_tokens_expire_at = None
 
     def get_session(self) -> Optional[UserSession]:
         return self._current_session
 
     def clear_session(self) -> None:
         self._current_session = None
+        self._stream_cst = None
+        self._stream_xst = None
+        self._stream_tokens_expire_at = None
 
     def is_authenticated(self) -> bool:
         if self._current_session is None:
@@ -39,6 +52,17 @@ class SessionManager:
             raise NotAuthenticatedError()
         return self._current_session
 
+    def cache_stream_tokens(self, cst: str, xst: str) -> None:
+        self._stream_cst = cst
+        self._stream_xst = xst
+        # Session tokens usually valid for 12+ hours, let's cache for 8 hours
+        self._stream_tokens_expire_at = datetime.now(timezone.utc) + timedelta(hours=8)
+
+    def get_cached_stream_tokens(self) -> tuple[Optional[str], Optional[str]]:
+        if self._stream_tokens_expire_at and datetime.now(timezone.utc) < self._stream_tokens_expire_at:
+            return self._stream_cst, self._stream_xst
+        return None, None
+
 
 session_manager = SessionManager()
 
@@ -46,6 +70,7 @@ session_manager = SessionManager()
 class AuthService:
     def __init__(self, settings: Settings) -> None:
         self._client = IgSessionClient(settings)
+        self._accounts_client = IgAccountsClient(settings)
         self._settings = settings
 
     async def login(self, request: LoginRequest) -> LoginResponse:
@@ -104,7 +129,17 @@ class AuthService:
 
     async def get_session_tokens(self) -> StreamingTokensResponse:
         session = session_manager.require_session()
+        
+        cst, xst = session_manager.get_cached_stream_tokens()
+        if cst and xst:
+            return StreamingTokensResponse(
+                cst=cst,
+                x_security_token=xst,
+                account_id=session.account_id,
+            )
+
         tokens = await self._client.fetch_session_tokens(session.access_token)
+        session_manager.cache_stream_tokens(tokens["cst"], tokens["x_security_token"])
 
         return StreamingTokensResponse(
             cst=tokens["cst"],
@@ -130,6 +165,65 @@ class AuthService:
         if not session.access_token:
             raise NotAuthenticatedError("No access token provided")
         return session.access_token
+
+    async def is_session_alive(self) -> BrokerSessionHealthResponse:
+        session = session_manager.get_session()
+        if session is None or not session_manager.is_authenticated():
+            return BrokerSessionHealthResponse(alive=False, detail="No active session")
+
+        try:
+            tokens = await self.get_session_tokens()
+            if not tokens.cst or not tokens.x_security_token:
+                return BrokerSessionHealthResponse(alive=False, detail="Missing IG session tokens", account_id=session.account_id)
+            return BrokerSessionHealthResponse(alive=True, detail="IG session is healthy", account_id=session.account_id)
+        except ApplicationError as exc:
+            return BrokerSessionHealthResponse(alive=False, detail=exc.detail, account_id=session.account_id)
+
+    async def ensure_session_valid(self) -> None:
+        health = await self.is_session_alive()
+        if not health.alive:
+            raise NotAuthenticatedError(health.detail)
+
+    async def get_account_balance(self) -> AccountSnapshot:
+        session = session_manager.require_session()
+        tokens = await self.get_session_tokens()
+        payload = await self._accounts_client.fetch_accounts(
+            {
+                "Authorization": f"Bearer {session.access_token}",
+                "CST": tokens.cst,
+                "X-SECURITY-TOKEN": tokens.x_security_token,
+                "IG-ACCOUNT-ID": tokens.account_id,
+            }
+        )
+        raw_accounts = payload.get("accounts")
+        if not isinstance(raw_accounts, list) or not raw_accounts:
+            raise ApplicationError("IG account snapshot is unavailable", status_code=502)
+
+        for item in raw_accounts:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("accountId", "")) != session.account_id:
+                continue
+            balance = _as_float(item.get("balance", {}), "balance")
+            available_cash = _as_optional_float(item.get("balance", {}), "available")
+            return AccountSnapshot(
+                account_id=session.account_id,
+                balance=balance,
+                available_cash=available_cash,
+                account_name=_as_str(item.get("accountName")),
+                account_type=_as_str(item.get("accountType")),
+            )
+
+        first = raw_accounts[0]
+        if not isinstance(first, dict):
+            raise ApplicationError("IG account snapshot is unavailable", status_code=502)
+        return AccountSnapshot(
+            account_id=_as_str(first.get("accountId")) or session.account_id,
+            balance=_as_float(first.get("balance", {}), "balance"),
+            available_cash=_as_optional_float(first.get("balance", {}), "available"),
+            account_name=_as_str(first.get("accountName")),
+            account_type=_as_str(first.get("accountType")),
+        )
 
     def _validate_requested_account_type(self, account_type: str) -> None:
         expected = self._settings.ig_environment
@@ -189,3 +283,34 @@ def _extract_account_id(ig_response: dict[str, object]) -> str:
                 return str(first_account["accountId"])
     
     raise AuthenticationError("IG response missing account information")
+
+
+def _as_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _as_float(value: object, key: str) -> float:
+    if isinstance(value, dict):
+        raw = value.get(key)
+    else:
+        raw = value
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        raise ApplicationError("IG account balance is invalid", status_code=502)
+
+
+def _as_optional_float(value: object, key: str) -> float | None:
+    if isinstance(value, dict):
+        raw = value.get(key)
+    else:
+        raw = value
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
