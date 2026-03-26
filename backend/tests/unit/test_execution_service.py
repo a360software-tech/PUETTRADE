@@ -1,9 +1,10 @@
 import asyncio
 
 from execution.application.dto import CloseExecutionRequest, ExecuteLiveRequest, ExecuteSignalRequest
-from execution.application.service import get_execution_service
+from execution.application.service import execution_event_notifier, get_execution_service
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer
 from positions.application.service import get_positions_service
+from shared.domain.events import ExecutionRecordedEvent
 
 
 def setup_function() -> None:
@@ -95,3 +96,36 @@ def test_execution_service_closes_paper_position() -> None:
 
     assert closed.execution.provider == "paper"
     assert closed.position.status == "CLOSED"
+
+
+def test_execution_service_emits_execution_events() -> None:
+    service = get_execution_service()
+    events: list[ExecutionRecordedEvent] = []
+    listener_id = execution_event_notifier.register(events.append)
+
+    opened = asyncio.run(
+        service.execute_from_signal(
+            ExecuteSignalRequest(
+                epic="CS.D.EURUSD.CFD.IP",
+                signal={
+                    "side": "SHORT",
+                    "price": 1.1050,
+                    "time": "2026-03-18T12:00:00",
+                    "momentum": 75.0,
+                    "reason": "RSI > 70",
+                },
+                settings={"account_balance": 10000},
+            )
+        )
+    )
+    asyncio.run(
+        service.close_position(
+            opened.position.id,
+            CloseExecutionRequest(close_price=1.1040, closed_at="2026-03-18T12:05:00"),
+        )
+    )
+    execution_event_notifier.unregister(listener_id)
+
+    assert len(events) == 2
+    assert events[0].action == "open_signal"
+    assert events[1].action == "close_position"

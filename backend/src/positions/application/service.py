@@ -4,15 +4,26 @@ from uuid import uuid4
 
 from positions.application.dto import CreatePositionFromSignalRequest, OpenLivePositionRequest
 from positions.domain.models import Position, PositionStatus
+from shared.application.notifier import EventNotifier
+from shared.domain.events import PositionClosedEvent, PositionOpenedEvent
 from shared.errors.base import ApplicationError
 from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 from strategy.application.service import StrategyService, get_strategy_service
 
 
+position_lifecycle_notifier = EventNotifier[PositionOpenedEvent | PositionClosedEvent]()
+
+
 class PositionsService:
-    def __init__(self, strategy_service: StrategyService, persistence: DatabasePersistence | None = None) -> None:
+    def __init__(
+        self,
+        strategy_service: StrategyService,
+        persistence: DatabasePersistence | None = None,
+        notifier: EventNotifier[PositionOpenedEvent | PositionClosedEvent] | None = None,
+    ) -> None:
         self._strategy_service = strategy_service
         self._persistence = persistence or get_persistence()
+        self._notifier = notifier or position_lifecycle_notifier
         self._positions: dict[str, Position] = {
             position.id: position for position in _load_persisted_positions(self._persistence)
         }
@@ -53,6 +64,7 @@ class PositionsService:
             )
             self._positions[position.id] = position
             _persist_position(self._persistence, position)
+            self._notifier.notify(PositionOpenedEvent(position=position))
             return position
 
     def open_live(self, epic: str, request: OpenLivePositionRequest) -> Position:
@@ -92,6 +104,7 @@ class PositionsService:
             )
             self._positions[position.id] = updated
             _persist_position(self._persistence, updated)
+            self._notifier.notify(PositionClosedEvent(position=updated))
             return updated
 
     def reset(self) -> None:

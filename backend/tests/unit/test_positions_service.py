@@ -1,7 +1,8 @@
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer
 from positions.application.dto import CreatePositionFromSignalRequest, OpenLivePositionRequest
-from positions.application.service import get_positions_service
+from positions.application.service import get_positions_service, position_lifecycle_notifier
 from positions.domain.models import PositionStatus
+from shared.domain.events import PositionClosedEvent, PositionOpenedEvent
 from strategy.domain.models import SignalSide, StrategySignal
 
 
@@ -81,3 +82,27 @@ def test_positions_service_prevents_duplicate_open_position_per_epic() -> None:
         assert str(exc) == "There is already an open position for CS.D.EURUSD.CFD.IP"
     else:
         raise AssertionError("Expected duplicate open position to fail")
+
+
+def test_positions_service_emits_lifecycle_events() -> None:
+    service = get_positions_service()
+    events: list[PositionOpenedEvent | PositionClosedEvent] = []
+    listener_id = position_lifecycle_notifier.register(events.append)
+
+    position = service.open_from_signal(
+        CreatePositionFromSignalRequest(
+            epic="CS.D.EURUSD.CFD.IP",
+            signal=StrategySignal(
+                side=SignalSide.LONG,
+                price=1.1012,
+                time="2026-03-18T12:00:00",
+                reason="EMA_CROSS_UP",
+            ),
+        )
+    )
+    service.close_position(position.id, close_price=1.1022, closed_at="2026-03-18T12:05:00")
+    position_lifecycle_notifier.unregister(listener_id)
+
+    assert len(events) == 2
+    assert isinstance(events[0], PositionOpenedEvent)
+    assert isinstance(events[1], PositionClosedEvent)

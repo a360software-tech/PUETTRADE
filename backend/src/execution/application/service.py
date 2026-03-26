@@ -13,9 +13,14 @@ from positions.application.dto import CreatePositionFromSignalRequest
 from positions.application.service import PositionsService, get_positions_service
 from positions.domain.models import Position
 from risk.application.service import RiskService, get_risk_service
+from shared.application.notifier import EventNotifier
 from shared.config.settings import Settings, get_settings
+from shared.domain.events import ExecutionRecordedEvent
 from shared.errors.base import ApplicationError
 from shared.infrastructure.persistence import DatabasePersistence, get_persistence
+
+
+execution_event_notifier = EventNotifier[ExecutionRecordedEvent]()
 
 
 class PaperExecutionGateway(ExecutionPort):
@@ -169,11 +174,13 @@ class ExecutionService:
         positions_service: PositionsService,
         auth_service: AuthService,
         persistence: DatabasePersistence | None = None,
+        notifier: EventNotifier[ExecutionRecordedEvent] | None = None,
     ) -> None:
         self._settings = settings
         self._risk_service = risk_service
         self._positions_service = positions_service
         self._persistence = persistence or get_persistence()
+        self._notifier = notifier or execution_event_notifier
         self._paper_gateway = PaperExecutionGateway(positions_service)
         self._ig_gateway = IgExecutionGateway(settings, auth_service, positions_service)
 
@@ -248,6 +255,15 @@ class ExecutionService:
                 "deal_id": execution.deal_id,
                 "detail": detail,
             },
+        )
+        position = self._positions_service.get_position(position_id)
+        self._notifier.notify(
+            ExecutionRecordedEvent(
+                epic=epic,
+                position=position,
+                execution=execution,
+                action=event_type,
+            )
         )
 
 
