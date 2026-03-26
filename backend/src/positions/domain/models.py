@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ class Position(BaseModel):
     execution_provider: str = "paper"
     provider_deal_id: str | None = None
     provider_deal_reference: str | None = None
+    execution_context: dict[str, Any] | None = None
     opened_at: str
     status: PositionStatus
     signal: StrategySignal

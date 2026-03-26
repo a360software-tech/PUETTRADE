@@ -58,6 +58,7 @@ class PositionsService:
                 execution_provider=request.execution_provider,
                 provider_deal_id=request.provider_deal_id,
                 provider_deal_reference=request.provider_deal_reference,
+                execution_context=request.execution_context,
                 opened_at=request.signal.time,
                 status=PositionStatus.OPEN,
                 signal=request.signal,

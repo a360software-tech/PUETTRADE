@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from market_data.application.dto import Resolution
@@ -14,6 +16,7 @@ class CreatePositionFromSignalRequest(BaseModel):
     execution_provider: str = "paper"
     provider_deal_id: str | None = None
     provider_deal_reference: str | None = None
+    execution_context: dict[str, Any] | None = None
 
 
 class OpenLivePositionRequest(BaseModel):

@@ -15,12 +15,13 @@ from positions.domain.models import Position
 from risk.application.service import RiskService, get_risk_service
 from shared.application.notifier import EventNotifier
 from shared.config.settings import Settings, get_settings
-from shared.domain.events import ExecutionRecordedEvent
+from shared.domain.events import ExecutionRecordedEvent, ExecutionRejectedEvent
 from shared.errors.base import ApplicationError
 from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
 execution_event_notifier = EventNotifier[ExecutionRecordedEvent]()
+execution_rejection_notifier = EventNotifier[ExecutionRejectedEvent]()
 
 
 class PaperExecutionGateway(ExecutionPort):
@@ -31,6 +32,7 @@ class PaperExecutionGateway(ExecutionPort):
         if decision.signal is None or decision.plan is None:
             raise ApplicationError("Cannot execute without approved signal and risk plan", status_code=409)
 
+        execution_context = _build_execution_context(decision=decision, execution_mode=ExecutionMode.PAPER.value, execution_provider="paper")
         position = self._positions_service.open_from_signal(
             CreatePositionFromSignalRequest(
                 epic=epic,
@@ -38,6 +40,7 @@ class PaperExecutionGateway(ExecutionPort):
                 risk_plan=decision.plan,
                 execution_mode=ExecutionMode.PAPER.value,
                 execution_provider="paper",
+                execution_context=execution_context,
             )
         )
         return (
@@ -101,6 +104,7 @@ class IgExecutionGateway(ExecutionPort):
             if str(confirmation.get("dealStatus", "ACCEPTED")).upper() != "ACCEPTED":
                 raise ApplicationError(str(confirmation.get("reason", "IG execution rejected")), status_code=409)
 
+        execution_context = _build_execution_context(decision=decision, execution_mode=ExecutionMode.IG.value, execution_provider="ig")
         position = self._positions_service.open_from_signal(
             CreatePositionFromSignalRequest(
                 epic=epic,
@@ -110,6 +114,7 @@ class IgExecutionGateway(ExecutionPort):
                 execution_provider="ig",
                 provider_deal_id=deal_id,
                 provider_deal_reference=deal_reference,
+                execution_context=execution_context,
             )
         )
         return (
@@ -184,13 +189,21 @@ class ExecutionService:
         self._paper_gateway = PaperExecutionGateway(positions_service)
         self._ig_gateway = IgExecutionGateway(settings, auth_service, positions_service)
 
+    async def process_signal(self, request: ExecuteSignalRequest) -> ExecutionResponse:
+        return await self.execute_from_signal(request)
+
+    async def process_live_signal(self, epic: str, request: ExecuteLiveRequest) -> ExecutionResponse:
+        return await self.execute_live(epic, request)
+
     async def execute_from_signal(self, request: ExecuteSignalRequest) -> ExecutionResponse:
         evaluation = self._risk_service.evaluate_signal(request)
         decision = evaluation.decision
         if not decision.approved or decision.signal is None or decision.plan is None:
+            self._notify_rejection(request.epic, "open_signal", decision.reason, decision)
             raise ApplicationError(decision.reason, status_code=409)
 
         gateway = self._resolve_gateway(request.execution_mode)
+        _validate_signal_price(decision.signal.price)
         execution, position = await gateway.open_position(epic=request.epic, decision=decision)
         self._record_execution_event(request.epic, position.id, execution, "open_signal", decision.reason)
         return ExecutionResponse(epic=request.epic, decision=decision, execution=execution, position=position)
@@ -199,9 +212,11 @@ class ExecutionService:
         evaluation = self.evaluate_live_decision(epic, request)
         decision = evaluation.decision
         if not decision.approved or decision.signal is None or decision.plan is None:
+            self._notify_rejection(epic, "open_live", decision.reason, decision)
             raise ApplicationError(decision.reason, status_code=409)
 
         gateway = self._resolve_gateway(request.execution_mode)
+        _validate_signal_price(decision.signal.price)
         execution, position = await gateway.open_position(epic=epic, decision=decision)
         self._record_execution_event(epic, position.id, execution, "open_live", decision.reason)
         return ExecutionResponse(epic=epic, decision=decision, execution=execution, position=position)
@@ -266,6 +281,16 @@ class ExecutionService:
             )
         )
 
+    def _notify_rejection(self, epic: str, action: str, reason: str, decision) -> None:
+        execution_rejection_notifier.notify(
+            ExecutionRejectedEvent(
+                epic=epic,
+                reason=reason,
+                action=action,
+                decision=decision,
+            )
+        )
+
 
 def get_execution_service() -> ExecutionService:
     return ExecutionService(get_settings(), get_risk_service(), get_positions_service(), get_auth_service())
@@ -276,3 +301,22 @@ def _as_optional_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _validate_signal_price(price: float) -> None:
+    if price <= 0:
+        raise ApplicationError("Signal price must be greater than zero", status_code=409)
+
+
+def _build_execution_context(*, decision, execution_mode: str, execution_provider: str) -> dict[str, object]:
+    signal = decision.signal
+    plan = decision.plan
+    return {
+        "decision_reason": decision.reason,
+        "signal_reason": None if signal is None else signal.reason,
+        "signal_phase": None if signal is None else signal.phase,
+        "signal_momentum": None if signal is None else signal.momentum,
+        "risk_plan": None if plan is None else plan.model_dump(mode="json"),
+        "execution_mode": execution_mode,
+        "execution_provider": execution_provider,
+    }
