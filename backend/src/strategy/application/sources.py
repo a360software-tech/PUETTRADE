@@ -11,13 +11,13 @@ class StrategyCandleSource(Protocol):
 
 class StreamBufferStrategyCandleSource:
     def get_candles(self, epic: str, resolution: Resolution, limit: int) -> list[CandleItemResponse]:
-        buffered = stream_candle_buffer.get(
+        buffered = stream_candle_buffer.get_series(
             epic=epic,
             resolution=to_lightstreamer_resolution(resolution),
             limit=limit,
+            include_incomplete=False,
         )
-        completed = [candle for candle in buffered if candle.completed]
-        return [_to_candle_item(candle) for candle in completed]
+        return [_to_candle_item(candle) for candle in buffered]
 
 
 def _to_candle_item(candle: BufferedCandle) -> CandleItemResponse:

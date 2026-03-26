@@ -6,7 +6,7 @@ from uuid import uuid4
 from typing import Callable, Optional
 
 from lightstreamer_client import LightstreamerClient, LightstreamerSubscription
-from market_data.domain.candles import BufferedCandle, stream_candle_buffer
+from market_data.domain.candles import BufferedCandle, candle_close_notifier, stream_candle_buffer
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ class LightstreamerGateway:
         self._credentials: Optional[LightstreamerCredentials] = None
         self._subscriptions: dict[str, str] = {}
         self._listeners: dict[str, dict[str, Callable[[CandleUpdate], None]]] = {}
-        self._candle_state: dict[str, dict[str, float | str]] = {}
         self._connected = False
         self._lock = asyncio.Lock()
 
@@ -85,7 +84,6 @@ class LightstreamerGateway:
 
             self._subscriptions.clear()
             self._listeners.clear()
-            self._candle_state.clear()
             stream_candle_buffer.clear()
 
             if self._client:
@@ -126,7 +124,6 @@ class LightstreamerGateway:
         item_name = f"CHART:{epic}:{resolution}"
         fields = ["BID_OPEN", "BID_HIGH", "BID_LOW", "BID_CLOSE", "CONS_END", "UTM", "LTV"]
 
-        current_candle: dict[str, float | str] = self._candle_state.setdefault(subscription_key, {})
         def emit(update: CandleUpdate) -> None:
             stream_candle_buffer.upsert(
                 BufferedCandle(
@@ -141,6 +138,20 @@ class LightstreamerGateway:
                     completed=update.completed,
                 )
             )
+            if update.completed:
+                candle_close_notifier.notify(
+                    BufferedCandle(
+                        epic=update.epic,
+                        resolution=resolution,
+                        time=update.time,
+                        open_price=update.open_price,
+                        high=update.high,
+                        low=update.low,
+                        close=update.close,
+                        volume=update.volume,
+                        completed=True,
+                    )
+                )
 
             for listener in list(self._listeners.get(subscription_key, {}).values()):
                 try:
@@ -148,15 +159,15 @@ class LightstreamerGateway:
                 except Exception as e:
                     logger.error(f"Error dispatching candle update: {e}")
 
-        def build_candle_update(completed: bool) -> CandleUpdate:
+        def build_candle_update(candle: BufferedCandle, completed: bool) -> CandleUpdate:
             return CandleUpdate(
-                epic=epic,
-                time=str(current_candle["time"]),
-                open_price=float(current_candle["open"]),
-                high=float(current_candle["high"]),
-                low=float(current_candle["low"]),
-                close=float(current_candle["close"]),
-                volume=float(current_candle.get("volume", 0.0)),
+                epic=candle.epic,
+                time=candle.time,
+                open_price=candle.open_price,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume=candle.volume,
                 completed=completed,
             )
 
@@ -202,38 +213,49 @@ class LightstreamerGateway:
 
                 timestamp_ms = int(utm) if utm else int(datetime.now().timestamp() * 1000)
                 candle_time = datetime.utcfromtimestamp(timestamp_ms / 1000).strftime("%Y-%m-%dT%H:%M:%S")
+                current = stream_candle_buffer.get_current(epic=epic, resolution=resolution)
 
-                if completed and current_candle:
-                    emit(build_candle_update(completed=True))
-                    current_candle.clear()
+                if completed and current is not None:
+                    emit(build_candle_update(current, completed=True))
+                    current = None
 
-                if not current_candle:
+                if current is None:
                     high = float(bid_high) if bid_high else close
                     low = float(bid_low) if bid_low else close
-                    current_candle.update({
-                        "time": candle_time,
-                        "open": float(bid_open) if bid_open else close,
-                        "high": high,
-                        "low": low,
-                        "close": close,
-                        "volume": float(ltv) if ltv else 0.0,
-                    })
+                    current = BufferedCandle(
+                        epic=epic,
+                        resolution=resolution,
+                        time=candle_time,
+                        open_price=float(bid_open) if bid_open else close,
+                        high=high,
+                        low=low,
+                        close=close,
+                        volume=float(ltv) if ltv else 0.0,
+                        completed=False,
+                    )
                 else:
                     high = float(bid_high) if bid_high else close
                     low = float(bid_low) if bid_low else close
-                    current_candle["close"] = close
-                    current_candle["high"] = max(current_candle["high"], high)
-                    current_candle["low"] = min(current_candle["low"], low)
-                    current_candle["volume"] = float(ltv) if ltv else current_candle.get("volume", 0.0)
+                    current = BufferedCandle(
+                        epic=epic,
+                        resolution=resolution,
+                        time=current.time if current.time == candle_time else candle_time,
+                        open_price=current.open_price if current.time == candle_time else (float(bid_open) if bid_open else close),
+                        high=max(current.high, high) if current.time == candle_time else high,
+                        low=min(current.low, low) if current.time == candle_time else low,
+                        close=close,
+                        volume=float(ltv) if ltv else current.volume,
+                        completed=False,
+                    )
 
-                emit(build_candle_update(completed=False))
+                emit(build_candle_update(current, completed=False))
                 logger.debug(
                     "Processed candle update epic=%s resolution=%s item=%s time=%s close=%s completed=%s",
                     epic,
                     resolution,
                     item_name or item_name_expected,
-                    current_candle["time"],
-                    current_candle["close"],
+                    current.time,
+                    current.close,
                     completed,
                 )
 
@@ -281,7 +303,6 @@ class LightstreamerGateway:
 
         self._subscriptions.pop(subscription_key, None)
         self._listeners.pop(subscription_key, None)
-        self._candle_state.pop(subscription_key, None)
 
     def get_buffered_candles(self, epic: str, resolution: str, limit: int = 200) -> list[CandleUpdate]:
         candles = stream_candle_buffer.get(epic=epic, resolution=resolution, limit=limit)

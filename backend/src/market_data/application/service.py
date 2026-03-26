@@ -6,7 +6,7 @@ from authentication.application.service import AuthService
 from integrations.ig.rest.prices_client import IgPricesClient
 from integrations.ig.streaming.lightstreamer import CandleUpdate, lightstreamer_gateway
 from market_data.application.dto import CandleItemResponse, CandlesResponse, CandleQuery, Resolution
-from market_data.domain.candles import to_lightstreamer_resolution
+from market_data.domain.candles import BufferedCandle, stream_candle_buffer, supports_buffered_resolution, to_lightstreamer_resolution
 from shared.errors.base import IntegrationError
 
 _CACHE_TTL_SECONDS = 10.0
@@ -76,6 +76,7 @@ class MarketDataService:
             allowance_remaining=_as_int(allowance.get("remainingAllowance")),
             allowance_total=_as_int(allowance.get("totalAllowance")),
         )
+        _seed_stream_buffer_from_history(epic=epic, resolution=query.resolution, candles=response.candles)
         _candle_cache[cache_key] = (monotonic(), response.model_copy(deep=True))
         return response
 
@@ -191,3 +192,24 @@ def _is_plausible_stream_candle(epic: str, candle: CandleUpdate) -> bool:
         return 1000.0 <= close <= 100000.0
 
     return close > 0.0
+
+
+def _seed_stream_buffer_from_history(epic: str, resolution: Resolution, candles: list[CandleItemResponse]) -> None:
+    if not candles or not supports_buffered_resolution(resolution):
+        return
+
+    buffered_resolution = to_lightstreamer_resolution(resolution)
+    stream_candle_buffer.seed_completed(
+        BufferedCandle(
+            epic=epic,
+            resolution=buffered_resolution,
+            time=candle.time,
+            open_price=candle.open,
+            high=candle.high,
+            low=candle.low,
+            close=candle.close,
+            volume=0.0 if candle.volume is None else candle.volume,
+            completed=True,
+        )
+        for candle in candles
+    )
