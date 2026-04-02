@@ -67,7 +67,7 @@ def test_risk_service_rejects_duplicate_open_position() -> None:
     assert "already an open position" in response.decision.reason
 
 
-def test_risk_service_opens_validated_live_position() -> None:
+def test_risk_service_evaluates_live_signal_without_opening_position() -> None:
     for index in range(25):
         stream_candle_buffer.upsert(
             BufferedCandle(
@@ -84,7 +84,7 @@ def test_risk_service_opens_validated_live_position() -> None:
         )
 
     service = get_risk_service()
-    response = service.open_validated_live(
+    response = service.evaluate_live(
         "CS.D.EURUSD.CFD.IP",
         EvaluateLiveRiskRequest(
             resolution="MINUTE_5",
@@ -94,6 +94,9 @@ def test_risk_service_opens_validated_live_position() -> None:
     )
 
     assert response.decision.approved is True
-    assert response.position.side == "SHORT"
-    assert response.position.stop_loss is not None
-    assert response.position.take_profit is not None
+    assert response.decision.signal is not None
+    assert response.decision.signal.side.value == "SHORT"
+    assert response.decision.plan is not None
+    assert response.decision.plan.stop_loss is not None
+    assert response.decision.plan.take_profit is not None
+    assert get_positions_service().list_positions() == []

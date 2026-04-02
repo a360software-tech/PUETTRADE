@@ -4,11 +4,13 @@ from execution.application.dto import CloseExecutionRequest, ExecuteLiveRequest,
 from execution.application.service import execution_event_notifier, execution_rejection_notifier, get_execution_service
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer
 from positions.application.service import get_positions_service
+from safety.application.service import get_safety_service
 from shared.domain.events import ExecutionRecordedEvent, ExecutionRejectedEvent
 
 
 def setup_function() -> None:
     get_positions_service().reset()
+    get_safety_service().reset()
     stream_candle_buffer.clear()
 
 
@@ -161,3 +163,44 @@ def test_execution_service_emits_rejection_event_for_invalid_signal() -> None:
 
     assert len(events) == 1
     assert events[0].action == "open_signal"
+
+
+def test_execution_service_blocks_second_trade_during_safety_window() -> None:
+    service = get_execution_service()
+
+    asyncio.run(
+        service.execute_from_signal(
+            ExecuteSignalRequest(
+                epic="CS.D.EURUSD.CFD.IP",
+                signal={
+                    "side": "SHORT",
+                    "price": 1.1050,
+                    "time": "2026-03-18T12:00:00",
+                    "momentum": 75.0,
+                    "reason": "RSI > 70",
+                },
+                settings={"account_balance": 10000},
+            )
+        )
+    )
+
+    try:
+        asyncio.run(
+            service.execute_from_signal(
+                ExecuteSignalRequest(
+                    epic="IX.D.DAX.CFD.IP",
+                    signal={
+                        "side": "SHORT",
+                        "price": 21500.0,
+                        "time": "2026-03-18T12:01:00",
+                        "momentum": 75.0,
+                        "reason": "RSI > 70",
+                    },
+                    settings={"account_balance": 10000},
+                )
+            )
+        )
+    except Exception as exc:
+        assert "Grace period active" in str(exc)
+    else:
+        raise AssertionError("Expected safety window to block the second trade")

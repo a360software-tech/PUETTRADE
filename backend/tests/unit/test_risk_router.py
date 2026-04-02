@@ -34,7 +34,7 @@ def test_risk_evaluate_endpoint_returns_plan() -> None:
     assert payload["decision"]["plan"]["size"] > 0
 
 
-def test_risk_open_live_position_endpoint_opens_position() -> None:
+def test_risk_evaluate_live_endpoint_returns_approved_decision() -> None:
     for index in range(25):
         stream_candle_buffer.upsert(
             BufferedCandle(
@@ -52,7 +52,7 @@ def test_risk_open_live_position_endpoint_opens_position() -> None:
 
     client = TestClient(app)
     response = client.post(
-        "/api/v1/risk/CS.D.EURUSD.CFD.IP/open-live-position",
+        "/api/v1/risk/CS.D.EURUSD.CFD.IP/evaluate-live",
         json={
             "resolution": "MINUTE_5",
             "limit": 20,
@@ -63,5 +63,5 @@ def test_risk_open_live_position_endpoint_opens_position() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["decision"]["approved"] is True
-    assert payload["position"]["side"] == "SHORT"
-    assert payload["position"]["size"] > 0
+    assert payload["decision"]["signal"]["side"] == "SHORT"
+    assert payload["decision"]["plan"]["size"] > 0

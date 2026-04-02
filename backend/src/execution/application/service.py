@@ -14,6 +14,8 @@ from positions.application.dto import CreatePositionFromSignalRequest
 from positions.application.service import PositionsService, get_positions_service
 from positions.domain.models import Position
 from risk.application.service import RiskService, get_risk_service
+from safety.application.dto import RegisterTradeRequest, SafetyQuery
+from safety.application.service import SafetyService, get_safety_service
 from shared.application.notifier import EventNotifier
 from shared.config.settings import Settings, get_settings
 from shared.domain.events import ExecutionRecordedEvent, ExecutionRejectedEvent
@@ -176,6 +178,7 @@ class ExecutionService:
         self,
         settings: Settings,
         risk_service: RiskService,
+        safety_service: SafetyService,
         positions_service: PositionsService,
         auth_service: AuthService,
         repository: ExecutionEventRepository | None = None,
@@ -183,6 +186,7 @@ class ExecutionService:
     ) -> None:
         self._settings = settings
         self._risk_service = risk_service
+        self._safety_service = safety_service
         self._positions_service = positions_service
         self._repository = repository or get_execution_event_repository()
         self._notifier = notifier or execution_event_notifier
@@ -196,6 +200,7 @@ class ExecutionService:
         return await self.execute_live(epic, request)
 
     async def execute_from_signal(self, request: ExecuteSignalRequest) -> ExecutionResponse:
+        await self._ensure_can_execute(epic=request.epic, execution_mode=request.execution_mode, action="open_signal")
         evaluation = self._risk_service.evaluate_signal(request)
         decision = evaluation.decision
         if not decision.approved or decision.signal is None or decision.plan is None:
@@ -205,10 +210,12 @@ class ExecutionService:
         gateway = self._resolve_gateway(request.execution_mode)
         _validate_signal_price(decision.signal.price)
         execution, position = await gateway.open_position(epic=request.epic, decision=decision)
+        self._safety_service.register_trade_execution(RegisterTradeRequest(epic=request.epic))
         self._record_execution_event(request.epic, position.id, execution, "open_signal", decision.reason)
         return ExecutionResponse(epic=request.epic, decision=decision, execution=execution, position=position)
 
     async def execute_live(self, epic: str, request: ExecuteLiveRequest) -> ExecutionResponse:
+        await self._ensure_can_execute(epic=epic, execution_mode=request.execution_mode, action="open_live")
         evaluation = self.evaluate_live_decision(epic, request)
         decision = evaluation.decision
         if not decision.approved or decision.signal is None or decision.plan is None:
@@ -218,6 +225,7 @@ class ExecutionService:
         gateway = self._resolve_gateway(request.execution_mode)
         _validate_signal_price(decision.signal.price)
         execution, position = await gateway.open_position(epic=epic, decision=decision)
+        self._safety_service.register_trade_execution(RegisterTradeRequest(epic=epic))
         self._record_execution_event(epic, position.id, execution, "open_live", decision.reason)
         return ExecutionResponse(epic=epic, decision=decision, execution=execution, position=position)
 
@@ -248,6 +256,15 @@ class ExecutionService:
                 raise ApplicationError("Live IG trading is blocked by configuration", status_code=409)
             return self._ig_gateway
         return self._paper_gateway
+
+    async def _ensure_can_execute(self, *, epic: str, execution_mode: ExecutionMode | None, action: str) -> None:
+        report = await self._safety_service.evaluate(SafetyQuery(epic=epic, execution_mode=execution_mode))
+        if report.can_open_new_trade:
+            return
+
+        reason = "; ".join(check.detail for check in report.checks if not check.passed)
+        self._notify_rejection(epic, action, reason, decision=None)
+        raise ApplicationError(reason, status_code=409)
 
     def _record_execution_event(
         self,
@@ -286,7 +303,7 @@ class ExecutionService:
 
 
 def get_execution_service() -> ExecutionService:
-    return ExecutionService(get_settings(), get_risk_service(), get_positions_service(), get_auth_service())
+    return ExecutionService(get_settings(), get_risk_service(), get_safety_service(), get_positions_service(), get_auth_service())
 
 
 def _as_optional_str(value: object) -> str | None:

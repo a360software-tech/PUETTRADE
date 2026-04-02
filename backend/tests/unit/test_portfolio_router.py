@@ -1,11 +1,13 @@
 from fastapi.testclient import TestClient
 
 from positions.application.service import get_positions_service
+from safety.application.service import get_safety_service
 from src.main import app
 
 
 def setup_function() -> None:
     get_positions_service().reset()
+    get_safety_service().reset()
 
 
 def test_portfolio_positions_endpoint_returns_paper_snapshot() -> None:

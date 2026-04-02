@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 
 from market_data.application.dto import Resolution
-from positions.domain.models import Position
 from risk.domain.models import RiskDecision, RiskSettings
 from strategy.domain.models import StrategyManifest, StrategySignal
 
@@ -22,11 +21,4 @@ class EvaluateLiveRiskRequest(BaseModel):
 class RiskEvaluationResponse(BaseModel):
     epic: str
     decision: RiskDecision
-    source: str
-
-
-class RiskOpenPositionResponse(BaseModel):
-    epic: str
-    decision: RiskDecision
-    position: Position
     source: str

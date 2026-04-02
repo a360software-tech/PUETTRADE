@@ -5,10 +5,12 @@ from execution.application.service import get_execution_service
 from portfolio.application.dto import PortfolioQuery
 from portfolio.application.service import get_portfolio_service
 from positions.application.service import get_positions_service
+from safety.application.service import get_safety_service
 
 
 def setup_function() -> None:
     get_positions_service().reset()
+    get_safety_service().reset()
 
 
 def test_portfolio_service_returns_matching_paper_positions() -> None:

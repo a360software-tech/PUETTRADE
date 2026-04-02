@@ -363,8 +363,8 @@ def _build_engine_options(database_url: str, settings: Settings) -> dict[str, An
     return options
 
 
-def _encode_json_payload(payload: dict[str, object]) -> dict[str, object] | str:
-    return payload
+def _encode_json_payload(payload: dict[str, object]) -> str:
+    return json.dumps(payload)
 
 
 def _decode_json_payload(payload: object) -> dict[str, object]:

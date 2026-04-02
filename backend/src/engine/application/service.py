@@ -6,8 +6,6 @@ from threading import RLock
 from engine.application.dto import EngineCycleResponse, EngineRunCycleRequest, EngineStartRequest, EngineStatusResponse
 from engine.domain.models import EngineEpicState, EngineMode
 from engine.infrastructure.repository import EngineStateRepository, get_engine_state_repository
-from safety.application.dto import RegisterTradeRequest, SafetyQuery
-from safety.application.service import SafetyService, get_safety_service
 from shared.errors.base import ApplicationError
 
 
@@ -15,11 +13,9 @@ class EngineService:
     def __init__(
         self,
         execution_service: ExecutionService,
-        safety_service: SafetyService,
         repository: EngineStateRepository | None = None,
     ) -> None:
         self._execution_service = execution_service
-        self._safety_service = safety_service
         self._repository = repository or get_engine_state_repository()
         mode, states = self._repository.load()
         self._mode = EngineMode(mode)
@@ -65,27 +61,6 @@ class EngineService:
             self._repository.save_epic_state(current_state)
 
         try:
-            safety_report = await self._safety_service.evaluate(
-                SafetyQuery(epic=request.epic, execution_mode=request.execution_mode)
-            )
-            if not safety_report.can_open_new_trade:
-                reason = "; ".join(check.detail for check in safety_report.checks if not check.passed)
-                with self._lock:
-                    state = self._epics[request.epic]
-                    state.last_run_at = _utc_now_iso()
-                    state.last_error = reason
-                    state.last_decision_reason = reason
-                    self._repository.save_epic_state(state)
-                return EngineCycleResponse(
-                    epic=request.epic,
-                    mode=self._mode,
-                    action="blocked_by_safety",
-                    state=self._snapshot_state(request.epic),
-                    decision=None,
-                    execution=None,
-                    position_id=None,
-                )
-
             execution_request = ExecuteLiveRequest(
                 resolution=request.resolution,
                 limit=request.limit,
@@ -135,7 +110,6 @@ class EngineService:
                 state.last_run_at = now
                 state.last_error = None
                 self._repository.save_epic_state(state)
-            self._safety_service.register_trade_execution(RegisterTradeRequest(epic=request.epic))
 
             return EngineCycleResponse(
                 epic=request.epic,
@@ -163,6 +137,16 @@ class EngineService:
                     execution=None,
                     position_id=self._snapshot_state(request.epic).last_position_id,
                 )
+            if _is_safety_block(exc.detail):
+                return EngineCycleResponse(
+                    epic=request.epic,
+                    mode=self._mode,
+                    action="blocked_by_safety",
+                    state=self._snapshot_state(request.epic),
+                    decision=None,
+                    execution=None,
+                    position_id=self._snapshot_state(request.epic).last_position_id,
+                )
             raise
 
     def reset(self) -> None:
@@ -185,7 +169,23 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-_engine_service = EngineService(get_execution_service(), get_safety_service())
+def _is_safety_block(detail: str) -> bool:
+    normalized = detail.lower()
+    return any(
+        fragment in normalized
+        for fragment in (
+            "grace period active",
+            "in cooldown",
+            "requires an authenticated session",
+            "backend to run in the live ig environment",
+            "blocked by configuration",
+            "market status",
+            "portfolio discrepancies",
+        )
+    )
+
+
+_engine_service = EngineService(get_execution_service())
 
 
 def get_engine_service() -> EngineService:

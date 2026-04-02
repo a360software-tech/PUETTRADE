@@ -82,7 +82,13 @@ def test_execution_service_blocks_ig_execution_when_live_trading_disabled() -> N
         IG_API_URL="https://api.ig.com/gateway/deal",
         IG_LIGHTSTREAMER_URL="https://apd.marketdatasystems.com",
     )
-    service = ExecutionService(settings, get_risk_service(), get_positions_service(), _AuthStub())
+    service = ExecutionService(
+        settings,
+        get_risk_service(),
+        SafetyService(settings, _AuthStub(), _PortfolioStub(), _MarketDiscoveryStub()),
+        get_positions_service(),
+        _AuthStub(),
+    )
 
     with pytest.raises(ApplicationError, match="Live IG trading is blocked by configuration"):
         service._resolve_gateway(explicit_mode=None, fallback_mode="ig")

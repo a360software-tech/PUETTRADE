@@ -1,11 +1,9 @@
-from positions.application.dto import CreatePositionFromSignalRequest
 from positions.application.service import PositionsService, get_positions_service
 from positions.domain.models import PositionStatus
 from risk.application.dto import (
     EvaluateLiveRiskRequest,
     EvaluateRiskRequest,
     RiskEvaluationResponse,
-    RiskOpenPositionResponse,
 )
 from risk.domain.models import RiskDecision, RiskPlan, RiskSettings
 from strategy.application.service import StrategyService, get_strategy_service
@@ -38,37 +36,6 @@ class RiskService:
 
         decision = self._build_decision(epic, signal, request.settings)
         return RiskEvaluationResponse(epic=epic, decision=decision, source="live_strategy")
-
-    def open_validated_from_signal(self, request: EvaluateRiskRequest) -> RiskOpenPositionResponse:
-        decision = self._build_decision(request.epic, request.signal, request.settings)
-        if not decision.approved or decision.plan is None or decision.signal is None:
-            raise _risk_rejection(decision.reason)
-
-        position = self._positions_service.open_from_signal(
-            CreatePositionFromSignalRequest(epic=request.epic, signal=decision.signal, risk_plan=decision.plan)
-        )
-        return RiskOpenPositionResponse(
-            epic=request.epic,
-            decision=decision,
-            position=position,
-            source="manual_signal",
-        )
-
-    def open_validated_live(self, epic: str, request: EvaluateLiveRiskRequest) -> RiskOpenPositionResponse:
-        evaluation = self.evaluate_live(epic, request)
-        decision = evaluation.decision
-        if not decision.approved or decision.plan is None or decision.signal is None:
-            raise _risk_rejection(decision.reason)
-
-        position = self._positions_service.open_from_signal(
-            CreatePositionFromSignalRequest(epic=epic, signal=decision.signal, risk_plan=decision.plan)
-        )
-        return RiskOpenPositionResponse(
-            epic=epic,
-            decision=decision,
-            position=position,
-            source="live_strategy",
-        )
 
     def _build_decision(self, epic: str, signal: StrategySignal, settings: RiskSettings) -> RiskDecision:
         open_positions = self._positions_service.list_positions(status=PositionStatus.OPEN)
@@ -128,9 +95,3 @@ def _signal_strength_allows_trade(signal: StrategySignal) -> bool:
     if signal.side == SignalSide.SHORT:
         return signal.momentum >= 60
     return True
-
-
-def _risk_rejection(reason: str) -> Exception:
-    from shared.errors.base import ApplicationError
-
-    return ApplicationError(reason, status_code=409)

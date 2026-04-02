@@ -2,11 +2,13 @@ from fastapi.testclient import TestClient
 
 from market_data.domain.candles import BufferedCandle, stream_candle_buffer
 from positions.application.service import get_positions_service
+from safety.application.service import get_safety_service
 from src.main import app
 
 
 def setup_function() -> None:
     get_positions_service().reset()
+    get_safety_service().reset()
     stream_candle_buffer.clear()
 
 
