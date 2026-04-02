@@ -6,6 +6,7 @@ from execution.application.dto import (
     ExecuteLiveRequest,
     ExecuteSignalRequest,
 )
+from execution.infrastructure.repository import ExecutionEventRepository, get_execution_event_repository
 from execution.application.ports import ExecutionPort
 from execution.domain.models import ExecutionMode, ExecutionRecord, ExecutionStatus
 from integrations.ig.rest.trading_client import IgTradingClient
@@ -17,7 +18,6 @@ from shared.application.notifier import EventNotifier
 from shared.config.settings import Settings, get_settings
 from shared.domain.events import ExecutionRecordedEvent, ExecutionRejectedEvent
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
 execution_event_notifier = EventNotifier[ExecutionRecordedEvent]()
@@ -178,13 +178,13 @@ class ExecutionService:
         risk_service: RiskService,
         positions_service: PositionsService,
         auth_service: AuthService,
-        persistence: DatabasePersistence | None = None,
+        repository: ExecutionEventRepository | None = None,
         notifier: EventNotifier[ExecutionRecordedEvent] | None = None,
     ) -> None:
         self._settings = settings
         self._risk_service = risk_service
         self._positions_service = positions_service
-        self._persistence = persistence or get_persistence()
+        self._repository = repository or get_execution_event_repository()
         self._notifier = notifier or execution_event_notifier
         self._paper_gateway = PaperExecutionGateway(positions_service)
         self._ig_gateway = IgExecutionGateway(settings, auth_service, positions_service)
@@ -257,19 +257,12 @@ class ExecutionService:
         event_type: str,
         detail: str,
     ) -> None:
-        self._persistence.append_execution_event(
+        self._repository.append(
             epic=epic,
             position_id=position_id,
-            execution_mode=execution.mode.value,
+            execution=execution,
             event_type=event_type,
-            payload={
-                "provider": execution.provider,
-                "status": execution.status.value,
-                "reason": execution.reason,
-                "deal_reference": execution.deal_reference,
-                "deal_id": execution.deal_id,
-                "detail": detail,
-            },
+            detail=detail,
         )
         position = self._positions_service.get_position(position_id)
         self._notifier.notify(

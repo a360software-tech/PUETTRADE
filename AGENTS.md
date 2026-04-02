@@ -48,6 +48,7 @@ Run backend:
 
 ```bash
 cd backend
+.venv\Scripts\python.exe run_migrations.py
 .venv\Scripts\python.exe -m uvicorn src.main:app --reload --port 8000
 ```
 
@@ -89,6 +90,22 @@ Compile check:
 ```bash
 cd backend
 .venv\Scripts\python.exe -m compileall src
+```
+
+Apply database migrations:
+
+```bash
+cd backend
+.venv\Scripts\python.exe run_migrations.py
+```
+
+Useful Alembic commands:
+
+```bash
+cd backend
+.venv\Scripts\alembic.exe current
+.venv\Scripts\alembic.exe history
+.venv\Scripts\alembic.exe revision -m "describe_change"
 ```
 
 Useful local URLs:
@@ -244,6 +261,7 @@ Minimum expected validation before considering work complete:
 
 - Backend: `pytest`
 - Frontend: `pnpm lint` and `pnpm build`
+- For Postgres-backed environments, run `run_migrations.py` before starting the backend
 
 ## Workflow Rules
 

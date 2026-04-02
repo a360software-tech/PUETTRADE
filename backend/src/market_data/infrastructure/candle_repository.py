@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from market_data.application.dto import CandleItemResponse, Resolution
-from market_data.domain.candles import BufferedCandle, candle_close_notifier, stream_candle_buffer, to_lightstreamer_resolution
+from market_data.domain.candles import BufferedCandle, candle_close_notifier, to_lightstreamer_resolution
 from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
@@ -110,28 +110,6 @@ def get_candle_repository() -> CandleRepository:
             lambda candle: get_candle_repository().upsert_buffered_candle(candle, source="stream")
         )
     return _repository
-
-
-def reseed_buffer_from_persistence(repository: CandleRepository, epic: str, resolution: Resolution, limit: int) -> list[CandleItemResponse]:
-    candles = repository.get_candles(epic, resolution, limit=limit)
-    if not candles:
-        return []
-
-    stream_candle_buffer.seed_completed(
-        BufferedCandle(
-            epic=epic,
-            resolution=to_lightstreamer_resolution(resolution),
-            time=candle.time,
-            open_price=candle.open,
-            high=candle.high,
-            low=candle.low,
-            close=candle.close,
-            volume=0.0 if candle.volume is None else candle.volume,
-            completed=True,
-        )
-        for candle in candles
-    )
-    return candles
 
 
 def _utc_now_iso() -> str:

@@ -2,9 +2,11 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import Column, Index, Integer, MetaData, PrimaryKeyConstraint, String, Table, Text, create_engine, text
+from sqlalchemy import JSON, Column, Index, Integer, MetaData, Numeric, PrimaryKeyConstraint, String, Table, Text, create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 from shared.config.settings import Settings, get_settings
 
@@ -20,7 +22,7 @@ positions_table = Table(
     Column("status", String, nullable=False),
     Column("epic", String, nullable=False),
     Column("execution_mode", String, nullable=False),
-    Column("payload", Text, nullable=False),
+    Column("payload", JSON, nullable=False),
 )
 Index("idx_positions_status_epic_mode", positions_table.c.status, positions_table.c.epic, positions_table.c.execution_mode)
 
@@ -28,14 +30,14 @@ engine_meta_table = Table(
     "engine_meta",
     metadata,
     Column("key", String, primary_key=True),
-    Column("payload", Text, nullable=False),
+    Column("payload", JSON, nullable=False),
 )
 
 engine_epics_table = Table(
     "engine_epics",
     metadata,
     Column("epic", String, primary_key=True),
-    Column("payload", Text, nullable=False),
+    Column("payload", JSON, nullable=False),
 )
 
 execution_events_table = Table(
@@ -46,7 +48,7 @@ execution_events_table = Table(
     Column("position_id", String),
     Column("execution_mode", String, nullable=False),
     Column("event_type", String, nullable=False),
-    Column("payload", Text, nullable=False),
+    Column("payload", JSON, nullable=False),
 )
 Index("idx_execution_events_position_event", execution_events_table.c.position_id, execution_events_table.c.epic, execution_events_table.c.event_type)
 
@@ -56,11 +58,11 @@ candles_table = Table(
     Column("epic", String, nullable=False),
     Column("resolution", String, nullable=False),
     Column("time", String, nullable=False),
-    Column("open", String, nullable=False),
-    Column("high", String, nullable=False),
-    Column("low", String, nullable=False),
-    Column("close", String, nullable=False),
-    Column("volume", String, nullable=False),
+    Column("open", Numeric(18, 8), nullable=False),
+    Column("high", Numeric(18, 8), nullable=False),
+    Column("low", Numeric(18, 8), nullable=False),
+    Column("close", Numeric(18, 8), nullable=False),
+    Column("volume", Numeric(18, 8), nullable=False),
     PrimaryKeyConstraint("epic", "resolution", "time"),
 )
 Index("idx_candles_epic_resolution_time", candles_table.c.epic, candles_table.c.resolution, candles_table.c.time.desc())
@@ -79,15 +81,22 @@ candle_sync_state_table = Table(
 
 
 class DatabasePersistence:
-    def __init__(self, database_path: Path | str) -> None:
+    def __init__(self, database_path: Path | str, settings: Settings | None = None) -> None:
+        self._settings = settings or get_settings()
         self._database_url = _normalize_database_url(database_path)
-        self._engine = create_engine(self._database_url, future=True)
-        self._initialize()
+        self._engine = create_engine(self._database_url, future=True, **_build_engine_options(self._database_url, self._settings))
+        should_auto_create = settings is None or self._settings.database_auto_create_schema
+        if should_auto_create:
+            self._initialize()
+
+    @property
+    def engine(self) -> Engine:
+        return self._engine
 
     def load_positions(self) -> list[dict[str, object]]:
         with self._engine.begin() as connection:
             rows = connection.execute(text("SELECT payload FROM positions ORDER BY id")).mappings().all()
-        return [json.loads(str(row["payload"])) for row in rows]
+        return [_decode_json_payload(row["payload"]) for row in rows]
 
     def save_position(self, position_id: str, payload: dict[str, object], status: str, epic: str, execution_mode: str) -> None:
         self._execute(
@@ -105,7 +114,7 @@ class DatabasePersistence:
                 "status": status,
                 "epic": epic,
                 "execution_mode": execution_mode,
-                "payload": json.dumps(payload),
+                "payload": _encode_json_payload(payload),
             },
         )
 
@@ -118,8 +127,8 @@ class DatabasePersistence:
             state_rows = connection.execute(text("SELECT payload FROM engine_epics ORDER BY epic")).mappings().all()
         mode = "STOPPED"
         if mode_row is not None:
-            mode = str(json.loads(str(mode_row["payload"])).get("mode", mode))
-        return mode, [json.loads(str(row["payload"])) for row in state_rows]
+            mode = str(_decode_json_payload(mode_row["payload"]).get("mode", mode))
+        return mode, [_decode_json_payload(row["payload"]) for row in state_rows]
 
     def save_engine_mode(self, mode: str) -> None:
         self._execute(
@@ -128,7 +137,7 @@ class DatabasePersistence:
             VALUES ('mode', :payload)
             ON CONFLICT(key) DO UPDATE SET payload = excluded.payload
             """,
-            {"payload": json.dumps({"mode": mode})},
+            {"payload": _encode_json_payload({"mode": mode})},
         )
 
     def save_engine_epic(self, epic: str, payload: dict[str, object]) -> None:
@@ -138,7 +147,7 @@ class DatabasePersistence:
             VALUES (:epic, :payload)
             ON CONFLICT(epic) DO UPDATE SET payload = excluded.payload
             """,
-            {"epic": epic, "payload": json.dumps(payload)},
+            {"epic": epic, "payload": _encode_json_payload(payload)},
         )
 
     def clear_engine_state(self) -> None:
@@ -164,7 +173,7 @@ class DatabasePersistence:
                 "position_id": position_id,
                 "execution_mode": execution_mode,
                 "event_type": event_type,
-                "payload": json.dumps(payload),
+                "payload": _encode_json_payload(payload),
             },
         )
 
@@ -175,7 +184,7 @@ class DatabasePersistence:
             ).mappings().all()
         events: list[dict[str, object]] = []
         for row in rows:
-            event_payload = json.loads(str(row["payload"]))
+            event_payload = _decode_json_payload(row["payload"])
             event_payload.update(
                 {
                     "epic": row["epic"],
@@ -214,11 +223,11 @@ class DatabasePersistence:
                 "epic": epic,
                 "resolution": resolution,
                 "time": time,
-                "open": str(open_price),
-                "high": str(high),
-                "low": str(low),
-                "close": str(close),
-                "volume": str(volume),
+                "open": _decimal_value(open_price),
+                "high": _decimal_value(high),
+                "low": _decimal_value(low),
+                "close": _decimal_value(close),
+                "volume": _decimal_value(volume),
             },
         )
 
@@ -335,6 +344,41 @@ def _normalize_database_url(database_target: Path | str) -> str:
     return target
 
 
+def _build_engine_options(database_url: str, settings: Settings) -> dict[str, Any]:
+    options: dict[str, Any] = {"echo": settings.database_echo}
+    if database_url.startswith("sqlite:///"):
+        options["connect_args"] = {"check_same_thread": False}
+        options["poolclass"] = NullPool
+        return options
+
+    options.update(
+        {
+            "pool_pre_ping": True,
+            "pool_size": settings.database_pool_size,
+            "max_overflow": settings.database_max_overflow,
+            "pool_timeout": settings.database_pool_timeout_seconds,
+            "pool_recycle": settings.database_pool_recycle_seconds,
+        }
+    )
+    return options
+
+
+def _encode_json_payload(payload: dict[str, object]) -> dict[str, object] | str:
+    return payload
+
+
+def _decode_json_payload(payload: object) -> dict[str, object]:
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str):
+        return json.loads(payload)
+    raise TypeError(f"Unsupported JSON payload type: {type(payload)!r}")
+
+
+def _decimal_value(value: float) -> float:
+    return float(value)
+
+
 _persistence: DatabasePersistence | None = None
 
 
@@ -344,7 +388,7 @@ def get_persistence() -> DatabasePersistence:
         settings = get_settings()
         target = resolve_database_target(settings)
         try:
-            _persistence = DatabasePersistence(target)
+            _persistence = DatabasePersistence(target, settings)
         except Exception as exc:
             if not _is_pytest_runtime():
                 raise RuntimeError(
@@ -358,7 +402,7 @@ def get_persistence() -> DatabasePersistence:
                 fallback_path,
                 exc,
             )
-            _persistence = DatabasePersistence(fallback_path)
+            _persistence = DatabasePersistence(fallback_path, settings)
     return _persistence
 
 

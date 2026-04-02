@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(default="postgresql://user:password@localhost:5432/trading_platform", alias="DATABASE_URL")
+    database_echo: bool = Field(default=False, alias="DATABASE_ECHO")
+    database_pool_size: int = Field(default=5, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=10, alias="DATABASE_MAX_OVERFLOW")
+    database_pool_timeout_seconds: int = Field(default=30, alias="DATABASE_POOL_TIMEOUT_SECONDS")
+    database_pool_recycle_seconds: int = Field(default=1800, alias="DATABASE_POOL_RECYCLE_SECONDS")
+    database_auto_create_schema: bool = Field(default=False, alias="DATABASE_AUTO_CREATE_SCHEMA")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")

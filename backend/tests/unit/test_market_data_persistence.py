@@ -1,9 +1,10 @@
 import asyncio
 from pathlib import Path
 
+from market_data.application.history_service import reseed_buffer_from_persistence
 from market_data.application.dto import CandleItemResponse, CandleQuery
 from market_data.application.service import MarketDataService
-from market_data.infrastructure.candle_repository import CandleRepository, reseed_buffer_from_persistence
+from market_data.infrastructure.candle_repository import CandleRepository
 from shared.config.settings import Settings
 from shared.infrastructure.persistence import DatabasePersistence
 from strategy.application.sources import StreamBufferStrategyCandleSource

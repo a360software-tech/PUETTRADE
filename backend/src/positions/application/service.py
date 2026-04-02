@@ -4,10 +4,10 @@ from uuid import uuid4
 
 from positions.application.dto import CreatePositionFromSignalRequest, OpenLivePositionRequest
 from positions.domain.models import Position, PositionStatus
+from positions.infrastructure.repository import PositionRepository, get_position_repository
 from shared.application.notifier import EventNotifier
 from shared.domain.events import PositionClosedEvent, PositionOpenedEvent
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 from strategy.application.service import StrategyService, get_strategy_service
 
 
@@ -18,15 +18,13 @@ class PositionsService:
     def __init__(
         self,
         strategy_service: StrategyService,
-        persistence: DatabasePersistence | None = None,
+        repository: PositionRepository | None = None,
         notifier: EventNotifier[PositionOpenedEvent | PositionClosedEvent] | None = None,
     ) -> None:
         self._strategy_service = strategy_service
-        self._persistence = persistence or get_persistence()
+        self._repository = repository or get_position_repository()
         self._notifier = notifier or position_lifecycle_notifier
-        self._positions: dict[str, Position] = {
-            position.id: position for position in _load_persisted_positions(self._persistence)
-        }
+        self._positions: dict[str, Position] = {position.id: position for position in self._repository.list()}
         self._lock = Lock()
 
     def list_positions(self, status: PositionStatus | None = None) -> list[Position]:
@@ -64,7 +62,7 @@ class PositionsService:
                 signal=request.signal,
             )
             self._positions[position.id] = position
-            _persist_position(self._persistence, position)
+            self._repository.save(position)
             self._notifier.notify(PositionOpenedEvent(position=position))
             return position
 
@@ -104,14 +102,14 @@ class PositionsService:
                 }
             )
             self._positions[position.id] = updated
-            _persist_position(self._persistence, updated)
+            self._repository.save(updated)
             self._notifier.notify(PositionClosedEvent(position=updated))
             return updated
 
     def reset(self) -> None:
         with self._lock:
             self._positions.clear()
-            self._persistence.clear_positions()
+            self._repository.clear()
 
     def _ensure_no_open_position_for_epic(self, epic: str) -> None:
         for position in self._positions.values():
@@ -123,21 +121,6 @@ def _calculate_pnl_points(side: str, entry_price: float, close_price: float) -> 
     if side == "LONG":
         return close_price - entry_price
     return entry_price - close_price
-
-
-def _persist_position(persistence: DatabasePersistence, position: Position) -> None:
-    persistence.save_position(
-        position_id=position.id,
-        payload=position.model_dump(mode="json"),
-        status=position.status.value,
-        epic=position.epic,
-        execution_mode=position.execution_mode,
-    )
-
-
-def _load_persisted_positions(persistence: DatabasePersistence) -> list[Position]:
-    return [Position.model_validate(payload) for payload in persistence.load_positions()]
-
 
 _positions_service = PositionsService(get_strategy_service())
 

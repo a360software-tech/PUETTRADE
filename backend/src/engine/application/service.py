@@ -5,10 +5,10 @@ from threading import RLock
 
 from engine.application.dto import EngineCycleResponse, EngineRunCycleRequest, EngineStartRequest, EngineStatusResponse
 from engine.domain.models import EngineEpicState, EngineMode
+from engine.infrastructure.repository import EngineStateRepository, get_engine_state_repository
 from safety.application.dto import RegisterTradeRequest, SafetyQuery
 from safety.application.service import SafetyService, get_safety_service
 from shared.errors.base import ApplicationError
-from shared.infrastructure.persistence import DatabasePersistence, get_persistence
 
 
 class EngineService:
@@ -16,16 +16,14 @@ class EngineService:
         self,
         execution_service: ExecutionService,
         safety_service: SafetyService,
-        persistence: DatabasePersistence | None = None,
+        repository: EngineStateRepository | None = None,
     ) -> None:
         self._execution_service = execution_service
         self._safety_service = safety_service
-        self._persistence = persistence or get_persistence()
-        mode, states = self._persistence.load_engine_state()
+        self._repository = repository or get_engine_state_repository()
+        mode, states = self._repository.load()
         self._mode = EngineMode(mode)
-        self._epics: dict[str, EngineEpicState] = {
-            state.epic: state for state in (EngineEpicState.model_validate(payload) for payload in states)
-        }
+        self._epics: dict[str, EngineEpicState] = {state.epic: state for state in states}
         self._lock = RLock()
 
     def get_status(self) -> EngineStatusResponse:
@@ -38,22 +36,22 @@ class EngineService:
     def start(self, request: EngineStartRequest) -> EngineStatusResponse:
         with self._lock:
             self._mode = EngineMode.RUNNING
-            self._persistence.save_engine_mode(self._mode.value)
+            self._repository.save_mode(self._mode.value)
             for epic in request.epics:
                 state = self._epics.setdefault(epic, _default_state(epic=epic, resolution="MINUTE_5", limit=100))
-                self._persistence.save_engine_epic(epic, state.model_dump(mode="json"))
+                self._repository.save_epic_state(state)
         return self.get_status()
 
     def stop(self) -> EngineStatusResponse:
         with self._lock:
             self._mode = EngineMode.STOPPED
-            self._persistence.save_engine_mode(self._mode.value)
+            self._repository.save_mode(self._mode.value)
         return self.get_status()
 
     def pause(self) -> EngineStatusResponse:
         with self._lock:
             self._mode = EngineMode.PAUSED
-            self._persistence.save_engine_mode(self._mode.value)
+            self._repository.save_mode(self._mode.value)
         return self.get_status()
 
     async def run_cycle(self, request: EngineRunCycleRequest) -> EngineCycleResponse:
@@ -64,7 +62,7 @@ class EngineService:
             current_state.resolution = request.resolution
             current_state.limit = request.limit
             self._epics[request.epic] = current_state
-            self._persistence.save_engine_epic(request.epic, current_state.model_dump(mode="json"))
+            self._repository.save_epic_state(current_state)
 
         try:
             safety_report = await self._safety_service.evaluate(
@@ -77,7 +75,7 @@ class EngineService:
                     state.last_run_at = _utc_now_iso()
                     state.last_error = reason
                     state.last_decision_reason = reason
-                    self._persistence.save_engine_epic(request.epic, state.model_dump(mode="json"))
+                    self._repository.save_epic_state(state)
                 return EngineCycleResponse(
                     epic=request.epic,
                     mode=self._mode,
@@ -104,7 +102,7 @@ class EngineService:
                 state.last_run_at = now
                 state.last_decision_reason = decision.reason
                 state.last_error = None
-                self._persistence.save_engine_epic(request.epic, state.model_dump(mode="json"))
+                self._repository.save_epic_state(state)
                 if decision.signal is not None and state.last_signal_time == decision.signal.time:
                     return EngineCycleResponse(
                         epic=request.epic,
@@ -136,7 +134,7 @@ class EngineService:
                 state.last_decision_reason = opened.decision.reason
                 state.last_run_at = now
                 state.last_error = None
-                self._persistence.save_engine_epic(request.epic, state.model_dump(mode="json"))
+                self._repository.save_epic_state(state)
             self._safety_service.register_trade_execution(RegisterTradeRequest(epic=request.epic))
 
             return EngineCycleResponse(
@@ -154,7 +152,7 @@ class EngineService:
                 state.last_run_at = _utc_now_iso()
                 state.last_error = exc.detail
                 state.last_decision_reason = exc.detail
-                self._persistence.save_engine_epic(request.epic, state.model_dump(mode="json"))
+                self._repository.save_epic_state(state)
             if "already an open position" in exc.detail:
                 return EngineCycleResponse(
                     epic=request.epic,
@@ -171,7 +169,7 @@ class EngineService:
         with self._lock:
             self._mode = EngineMode.STOPPED
             self._epics.clear()
-            self._persistence.clear_engine_state()
+            self._repository.clear()
 
     def _snapshot_state(self, epic: str) -> EngineEpicState:
         with self._lock:
